@@ -1,0 +1,7 @@
+cat >> ../.gitignore << 'EOF'
+
+# Environment variables (asla GitHub'a gitmesin!)
+.env
+backend/.env
+*/.env
+EOF
