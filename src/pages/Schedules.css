@@ -1,0 +1,322 @@
+/* ============================================================================
+   SCHEDULES.CSS - SADECE DERS PROGRAMI SAYFASI İÇİN
+   ============================================================================ */
+
+/* Alert Messages */
+.alert {
+  padding: 1.25rem 1.75rem;
+  border-radius: 14px;
+  margin-bottom: 2rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  font-weight: 600;
+  font-size: 1rem;
+  animation: alertSlide 0.5s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+@keyframes alertSlide {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.alert-success {
+  background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+  color: #065f46;
+  border: 2px solid #34d399;
+}
+
+.alert-success svg {
+  color: #059669;
+  flex-shrink: 0;
+}
+
+.alert-error {
+  background: linear-gradient(135deg, #fee2e2, #fecaca);
+  color: #991b1b;
+  border: 2px solid #f87171;
+}
+
+.alert-error svg {
+  color: #dc2626;
+  flex-shrink: 0;
+}
+
+/* Loading Spinner */
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Dual View Grid */
+.schedules-dual-view {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  margin-bottom: 2rem;
+}
+
+/* Days Grid */
+.days-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 1.25rem;
+  padding: 1.5rem;
+  background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+}
+
+.day-column {
+  background: white;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  transition: transform 0.3s;
+}
+
+.day-column:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+}
+
+/* Day Headers with Colors */
+.day-header {
+  padding: 1rem;
+  text-align: center;
+  font-weight: 800;
+  color: white;
+  font-size: 1rem;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Day Slots */
+.day-slots {
+  padding: 1rem;
+  min-height: 200px;
+}
+
+/* Lesson Slot */
+.lesson-slot {
+  padding: 0.875rem;
+  margin-bottom: 0.875rem;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 2px solid transparent;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  position: relative;
+}
+
+.lesson-slot::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, transparent 0%, rgba(255, 255, 255, 0.3) 100%);
+  pointer-events: none;
+  border-radius: 8px;
+}
+
+.lesson-slot:hover {
+  transform: scale(1.08) translateY(-4px);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
+  z-index: 10;
+}
+
+.lesson-slot.highlighted {
+  border-color: #667eea !important;
+  box-shadow: 0 12px 32px rgba(102, 126, 234, 0.5) !important;
+  z-index: 20;
+  transform: scale(1.1) translateY(-6px);
+}
+
+.lesson-slot:last-child {
+  margin-bottom: 0;
+}
+
+/* Lesson Content */
+.lesson-period {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.15);
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  margin-right: 0.5rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.lesson-name {
+  font-weight: 800;
+  font-size: 0.9rem;
+  margin-bottom: 0.5rem;
+  line-height: 1.3;
+  letter-spacing: -0.2px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.lesson-teacher,
+.lesson-classroom {
+  font-size: 0.8rem;
+  opacity: 0.95;
+  margin-top: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 600;
+}
+
+.lesson-teacher svg,
+.lesson-classroom svg {
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
+.lesson-time {
+  font-size: 0.75rem;
+  color: rgba(0, 0, 0, 0.6);
+  margin-top: 0.5rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.lesson-time svg {
+  flex-shrink: 0;
+}
+
+/* Empty Day */
+.empty-day {
+  padding: 2rem 1rem;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-style: italic;
+}
+
+/* Empty State */
+.empty-schedule-state {
+  text-align: center;
+  padding: 5rem 3rem;
+  background: white;
+  border-radius: 18px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  border: 2px dashed #cbd5e1;
+}
+
+.empty-schedule-state svg {
+  color: #667eea;
+  opacity: 0.4;
+  margin-bottom: 2rem;
+}
+
+.empty-schedule-state h3 {
+  color: #1e293b;
+  font-size: 1.75rem;
+  margin-bottom: 1rem;
+  font-weight: 800;
+}
+
+.empty-schedule-state p {
+  font-size: 1.1rem;
+  margin-bottom: 0.75rem;
+  color: #64748b;
+  line-height: 1.6;
+}
+
+/* Stats in Alert */
+.stats-box {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.25rem;
+}
+
+.stat-item {
+  padding: 1rem;
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.stat-label {
+  color: #64748b;
+  font-size: 0.85rem;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+
+.stat-value {
+  font-weight: 800;
+  color: #1e293b;
+  font-size: 1.25rem;
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+  .schedules-dual-view {
+    grid-template-columns: 1fr;
+    gap: 2.5rem;
+  }
+}
+
+@media (max-width: 900px) {
+  .days-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .days-grid {
+    grid-template-columns: 1fr;
+    padding: 1rem;
+  }
+  
+  .lesson-slot {
+    padding: 1rem;
+  }
+}
+
+/* Print Styles */
+@media print {
+  .schedules-dual-view {
+    grid-template-columns: 1fr;
+  }
+  
+  .days-grid {
+    grid-template-columns: repeat(5, 1fr);
+    background: white;
+  }
+  
+  .lesson-slot {
+    box-shadow: none;
+    border: 1px solid #ddd;
+  }
+}
