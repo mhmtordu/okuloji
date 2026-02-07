@@ -11,7 +11,7 @@ export const getClassrooms = async (req, res) => {
         u.full_name as teacher_name,
         u.branch as teacher_branch
       FROM classrooms c
-      LEFT JOIN users u ON c.class_teacher_id = u.user_id
+      LEFT JOIN users u ON c.guide_teacher_id = u.user_id
       WHERE c.school_id = $1
       ORDER BY c.grade_level, c.classroom_name`,
       [schoolId]
