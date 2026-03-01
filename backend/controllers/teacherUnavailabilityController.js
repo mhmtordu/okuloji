@@ -1,12 +1,12 @@
 import pool from '../config/database.js';
 
-// Öğretmen kısıtlamalarını getir (Belirli bir öğretmen + okul için)
 export const getTeacherUnavailability = async (req, res) => {
   try {
     const { teacher_id, school_id } = req.query;
 
     if (!teacher_id || !school_id) {
       return res.status(400).json({ 
+        success: false,
         message: 'teacher_id ve school_id gerekli' 
       });
     }
@@ -16,17 +16,18 @@ export const getTeacherUnavailability = async (req, res) => {
         tu.unavailability_id,
         tu.teacher_id,
         tu.school_id,
-        tu.day_of_week,
-        tu.slot_id,
+        tu.time_slot_id,
         tu.reason,
         ts.slot_name,
         ts.start_time,
         ts.end_time,
-        ts.slot_order
+        ts.slot_order,
+        ts.day_of_week,
+        ts.period
       FROM teacher_unavailability tu
-      JOIN time_slots ts ON tu.slot_id = ts.slot_id
+      JOIN time_slots ts ON tu.time_slot_id = ts.time_slot_id
       WHERE tu.teacher_id = $1 AND tu.school_id = $2
-      ORDER BY tu.day_of_week, ts.slot_order`,
+      ORDER BY ts.day_of_week, ts.slot_order`,
       [teacher_id, school_id]
     );
 
@@ -46,22 +47,22 @@ export const getTeacherUnavailability = async (req, res) => {
   }
 };
 
-// Yeni kısıtlama ekle
 export const createUnavailability = async (req, res) => {
   try {
-    const { teacher_id, school_id, day_of_week, slot_id, reason } = req.body;
+    const { teacher_id, school_id, time_slot_id, reason } = req.body;
 
-    if (!teacher_id || !school_id || day_of_week === undefined || !slot_id) {
+    if (!teacher_id || !school_id || !time_slot_id) {
       return res.status(400).json({ 
-        message: 'teacher_id, school_id, day_of_week ve slot_id gerekli' 
+        success: false,
+        message: 'teacher_id, school_id ve time_slot_id gerekli' 
       });
     }
 
     // Aynı kısıtlama var mı kontrol et
     const checkExisting = await pool.query(
       `SELECT * FROM teacher_unavailability 
-       WHERE teacher_id = $1 AND day_of_week = $2 AND slot_id = $3`,
-      [teacher_id, day_of_week, slot_id]
+       WHERE teacher_id = $1 AND time_slot_id = $2`,
+      [teacher_id, time_slot_id]
     );
 
     if (checkExisting.rows.length > 0) {
@@ -73,10 +74,10 @@ export const createUnavailability = async (req, res) => {
 
     const result = await pool.query(
       `INSERT INTO teacher_unavailability 
-       (teacher_id, school_id, day_of_week, slot_id, reason)
-       VALUES ($1, $2, $3, $4, $5)
+       (teacher_id, school_id, time_slot_id, reason)
+       VALUES ($1, $2, $3, $4)
        RETURNING *`,
-      [teacher_id, school_id, day_of_week, slot_id, reason || null]
+      [teacher_id, school_id, time_slot_id, reason || null]
     );
 
     res.status(201).json({
@@ -95,7 +96,6 @@ export const createUnavailability = async (req, res) => {
   }
 };
 
-// Kısıtlama sil
 export const deleteUnavailability = async (req, res) => {
   try {
     const { id } = req.params;
@@ -130,35 +130,32 @@ export const deleteUnavailability = async (req, res) => {
   }
 };
 
-// Toplu kısıtlama güncelleme (Frontend'den gelen tüm kısıtlamaları kaydet)
 export const bulkUpdateUnavailability = async (req, res) => {
   const client = await pool.connect();
   
   try {
     const { teacher_id, school_id, unavailabilities } = req.body;
-    // unavailabilities: [{ day_of_week, slot_id, reason }, ...]
 
     if (!teacher_id || !school_id || !Array.isArray(unavailabilities)) {
       return res.status(400).json({ 
+        success: false,
         message: 'teacher_id, school_id ve unavailabilities (array) gerekli' 
       });
     }
 
     await client.query('BEGIN');
 
-    // Önce mevcut kısıtlamaları sil
     await client.query(
       'DELETE FROM teacher_unavailability WHERE teacher_id = $1 AND school_id = $2',
       [teacher_id, school_id]
     );
 
-    // Yeni kısıtlamaları ekle
     for (const item of unavailabilities) {
       await client.query(
         `INSERT INTO teacher_unavailability 
-         (teacher_id, school_id, day_of_week, slot_id, reason)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [teacher_id, school_id, item.day_of_week, item.slot_id, item.reason || null]
+         (teacher_id, school_id, time_slot_id, reason)
+         VALUES ($1, $2, $3, $4)`,
+        [teacher_id, school_id, item.time_slot_id, item.reason || null]
       );
     }
 

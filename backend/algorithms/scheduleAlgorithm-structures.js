@@ -1,185 +1,124 @@
 /**
- * ============================================================================
- * DERS PROGRAMI ALGORİTMASI - VERİ YAPILARI (v2.0)
- * ============================================================================
- * 
- * Özellikler:
- * - 2'li blok desteği
- * - Günlük denge takibi
- * - Dinamik ders sayısı
+ * scheduleAlgorithm-structures.js (v2.3)
+ * - Classroom: grade_level bazlı maxDailyHours (8.sınıf→7, diğer→8)
+ * - Assignment: MEB blok kuralları (2+2+1 mantığı)
  */
 
-// ============================================================================
-// SINIF (Classroom)
-// ============================================================================
 export class Classroom {
   constructor(id, name, gradeLevel, maxWeeklyHours = 40) {
     this.id = id;
     this.name = name;
     this.gradeLevel = gradeLevel;
     this.maxWeeklyHours = maxWeeklyHours;
-    this.schedule = {}; // { "Pazartesi-1": assignment, ... }
+    this.maxDailyHours = String(gradeLevel) === '8' ? 7 : 8;
+    this.schedule = {};
     this.totalHours = 0;
-    this.dailyHours = { // Günlük takip
-      'Pazartesi': 0,
-      'Salı': 0,
-      'Çarşamba': 0,
-      'Perşembe': 0,
-      'Cuma': 0
+    this.dailyHours = {
+      'Pazartesi': 0, 'Sali': 0, 'Carsamba': 0, 'Persembe': 0, 'Cuma': 0
     };
   }
 
-  isSlotEmpty(slotKey) {
-    return !this.schedule[slotKey];
+  isSlotEmpty(slotKey) { return !this.schedule[slotKey]; }
+  isFull() { return this.totalHours >= this.maxWeeklyHours; }
+  getRemainingHours() { return this.maxWeeklyHours - this.totalHours; }
+  getDailyHours(dayKey) { return this.dailyHours[dayKey] || 0; }
+
+  canAssignToDay(dayKey, hours) {
+    return (this.getDailyHours(dayKey) + hours) <= this.maxDailyHours;
   }
 
-  isFull() {
-    return this.totalHours >= this.maxWeeklyHours;
-  }
-
-  getRemainingHours() {
-    return this.maxWeeklyHours - this.totalHours;
-  }
-
-  getDailyHours(dayName) {
-    return this.dailyHours[dayName] || 0;
-  }
-
-  canAssignToDay(dayName, hours, maxDailyHours) {
-    const current = this.getDailyHours(dayName);
-    return (current + hours) <= maxDailyHours;
-  }
-
-  assignToSlot(slotKey, dayName, assignment) {
+  assignToSlot(slotKey, dayKey, assignment) {
     this.schedule[slotKey] = assignment;
     this.totalHours++;
-    this.dailyHours[dayName]++;
+    if (this.dailyHours[dayKey] !== undefined) this.dailyHours[dayKey]++;
   }
 
-  removeFromSlot(slotKey, dayName) {
+  removeFromSlot(slotKey, dayKey) {
     if (this.schedule[slotKey]) {
       delete this.schedule[slotKey];
       this.totalHours--;
-      this.dailyHours[dayName]--;
+      if (this.dailyHours[dayKey] !== undefined) this.dailyHours[dayKey]--;
     }
   }
 }
 
-// ============================================================================
-// ÖĞRETMEN (Teacher)
-// ============================================================================
 export class Teacher {
   constructor(id, name, branch) {
     this.id = id;
     this.name = name;
     this.branch = branch;
-    this.schedule = {}; // { "Pazartesi-1": assignment, ... }
+    this.schedule = {};
     this.totalHours = 0;
     this.unavailableSlots = new Set();
     this.dailyHours = {
-      'Pazartesi': 0,
-      'Salı': 0,
-      'Çarşamba': 0,
-      'Perşembe': 0,
-      'Cuma': 0
+      'Pazartesi': 0, 'Sali': 0, 'Carsamba': 0, 'Persembe': 0, 'Cuma': 0
     };
   }
 
-  isAvailable(slotKey) {
-    return !this.schedule[slotKey] && !this.unavailableSlots.has(slotKey);
+  isAvailable(slotKey, timeSlotId) {
+    return !this.schedule[slotKey] && !this.unavailableSlots.has(Number(timeSlotId));
   }
 
-  getDailyHours(dayName) {
-    return this.dailyHours[dayName] || 0;
-  }
+  getDailyHours(dayKey) { return this.dailyHours[dayKey] || 0; }
 
-  assignToSlot(slotKey, dayName, assignment) {
+  assignToSlot(slotKey, dayKey, assignment) {
     this.schedule[slotKey] = assignment;
     this.totalHours++;
-    this.dailyHours[dayName]++;
+    if (this.dailyHours[dayKey] !== undefined) this.dailyHours[dayKey]++;
   }
 
-  removeFromSlot(slotKey, dayName) {
+  removeFromSlot(slotKey, dayKey) {
     if (this.schedule[slotKey]) {
       delete this.schedule[slotKey];
       this.totalHours--;
-      this.dailyHours[dayName]--;
+      if (this.dailyHours[dayKey] !== undefined) this.dailyHours[dayKey]--;
     }
   }
 
-  addUnavailableSlot(slotKey) {
-    this.unavailableSlots.add(slotKey);
+  addUnavailableSlot(timeSlotId) {
+    this.unavailableSlots.add(Number(timeSlotId));
   }
 
-  getRemainingHours() {
-    return 40 - this.totalHours;
-  }
+  getRemainingHours() { return 40 - this.totalHours; }
 }
 
-// ============================================================================
-// DERS (Subject)
-// ============================================================================
 export class Subject {
   constructor(id, name, code, weeklyHours, color) {
     this.id = id;
     this.name = name;
     this.code = code;
     this.weeklyHours = weeklyHours;
-    this.color = color;
+    this.color = color || '#3b82f6';
   }
 }
 
-// ============================================================================
-// ZAMAN DİLİMİ (TimeSlot)
-// ============================================================================
 export class TimeSlot {
-  constructor(id, dayOfWeek, dayName, period, startTime, endTime, isBreak = false) {
+  constructor(id, dayOfWeek, dayName, dayKey, period, startTime, endTime, isBreak = false) {
     this.id = id;
     this.dayOfWeek = dayOfWeek;
     this.dayName = dayName;
+    this.dayKey = dayKey;
     this.period = period;
     this.startTime = startTime;
     this.endTime = endTime;
     this.isBreak = isBreak;
   }
 
-  getKey() {
-    return `${this.dayName}-${this.period}`;
-  }
-
-  isBreakTime() {
-    return this.isBreak;
-  }
+  getKey() { return `${this.dayKey}-${this.period}`; }
 }
 
-// ============================================================================
-// BLOK (Block) - YENİ!
-// ============================================================================
 export class Block {
   constructor(size, slots = []) {
-    this.size = size; // 1, 2, veya 3
-    this.slots = slots; // Atanan slot'lar
-    this.assigned = false;
-  }
-
-  isAssigned() {
-    return this.assigned;
-  }
-
-  assign(slots) {
+    this.size = size;
     this.slots = slots;
-    this.assigned = true;
-  }
-
-  unassign() {
-    this.slots = [];
     this.assigned = false;
   }
+
+  isAssigned() { return this.assigned; }
+  assign(slots) { this.slots = slots; this.assigned = true; }
+  unassign() { this.slots = []; this.assigned = false; }
 }
 
-// ============================================================================
-// DERS ATAMASI (Assignment) - BLOK DESTEKLİ
-// ============================================================================
 export class Assignment {
   constructor(id, classroom, subject, teacher, weeklyHours) {
     this.id = id;
@@ -187,54 +126,72 @@ export class Assignment {
     this.subject = subject;
     this.teacher = teacher;
     this.weeklyHours = weeklyHours;
-    this.blocks = this.createBlocks(weeklyHours); // YENİ!
+    this.blocks = this.createBlocks(weeklyHours);
     this.assignedHours = 0;
     this.assignedSlots = [];
   }
 
-  // 2'li bloklara böl
   createBlocks(weeklyHours) {
     const blocks = [];
-    let remaining = weeklyHours;
-    
-    // 2'li bloklar oluştur
-    while (remaining >= 2) {
-      blocks.push(new Block(2));
-      remaining -= 2;
+    switch (weeklyHours) {
+      case 1:
+        blocks.push(new Block(1));
+        break;
+      case 2:
+        blocks.push(new Block(2));
+        break;
+      case 3:
+        // 2+1
+        blocks.push(new Block(2));
+        blocks.push(new Block(1));
+        break;
+      case 4:
+        // 2+2
+        blocks.push(new Block(2));
+        blocks.push(new Block(2));
+        break;
+      case 5:
+        // 2+2+1
+        blocks.push(new Block(2));
+        blocks.push(new Block(2));
+        blocks.push(new Block(1));
+        break;
+      case 6:
+        // 2+2+2
+        blocks.push(new Block(2));
+        blocks.push(new Block(2));
+        blocks.push(new Block(2));
+        break;
+      case 7:
+        // 2+2+2+1
+        blocks.push(new Block(2));
+        blocks.push(new Block(2));
+        blocks.push(new Block(2));
+        blocks.push(new Block(1));
+        break;
+      case 8:
+        // 2+2+2+2
+        blocks.push(new Block(2));
+        blocks.push(new Block(2));
+        blocks.push(new Block(2));
+        blocks.push(new Block(2));
+        break;
+      default:
+        let remaining = weeklyHours;
+        while (remaining >= 2) { blocks.push(new Block(2)); remaining -= 2; }
+        if (remaining === 1) blocks.push(new Block(1));
     }
-    
-    // Kalan 1 saat varsa
-    if (remaining === 1) {
-      blocks.push(new Block(1));
-    }
-    
     return blocks;
   }
 
-  isComplete() {
-    return this.blocks.every(block => block.isAssigned());
-  }
+  isComplete() { return this.blocks.every(b => b.isAssigned()); }
+  getRemainingBlocks() { return this.blocks.filter(b => !b.isAssigned()); }
+  getAssignedBlockCount() { return this.blocks.filter(b => b.isAssigned()).length; }
 
-  getRemainingBlocks() {
-    return this.blocks.filter(block => !block.isAssigned());
-  }
-
-  getAssignedBlockCount() {
-    return this.blocks.filter(block => block.isAssigned()).length;
-  }
-
-  getHoursOnDay(dayName) {
-    return this.assignedSlots.filter(slot => 
-      slot.startsWith(dayName)
-    ).length;
-  }
-
-  getBlocksOnDay(dayName) {
+  getBlocksOnDay(dayKey) {
     let count = 0;
     for (const block of this.blocks) {
-      if (block.isAssigned() && block.slots[0].startsWith(dayName)) {
-        count++;
-      }
+      if (block.isAssigned() && block.slots[0] && block.slots[0].startsWith(dayKey)) count++;
     }
     return count;
   }
@@ -248,14 +205,11 @@ export class Assignment {
   removeBlock(block) {
     const slotKeys = block.slots;
     block.unassign();
-    this.assignedSlots = this.assignedSlots.filter(key => !slotKeys.includes(key));
+    this.assignedSlots = this.assignedSlots.filter(k => !slotKeys.includes(k));
     this.assignedHours -= block.size;
   }
 }
 
-// ============================================================================
-// PROGRAM (Schedule)
-// ============================================================================
 export class Schedule {
   constructor() {
     this.classrooms = new Map();
@@ -263,34 +217,26 @@ export class Schedule {
     this.subjects = new Map();
     this.timeSlots = [];
     this.assignments = [];
-    this.slotsPerDay = 0; // Dinamik
-    this.weeklySlots = 0; // Dinamik
+    this.slotsPerDay = 0;
+    this.weeklySlots = 0;
   }
 
-  hasConflict(classroom, teacher, slotKey) {
-    // Sınıf dolu mu?
-    if (!classroom.isSlotEmpty(slotKey)) {
+  hasConflict(classroom, teacher, slotKey, timeSlotId) {
+    if (!classroom.isSlotEmpty(slotKey))
       return { conflict: true, reason: 'Sınıf dolu' };
-    }
-    
-    // Öğretmen müsait mi?
-    if (!teacher.isAvailable(slotKey)) {
+    if (!teacher.isAvailable(slotKey, timeSlotId))
       return { conflict: true, reason: 'Öğretmen müsait değil' };
-    }
-    
     return { conflict: false };
   }
 
-  assign(assignment, slotKey, dayName) {
-    const { classroom, teacher } = assignment;
-    classroom.assignToSlot(slotKey, dayName, assignment);
-    teacher.assignToSlot(slotKey, dayName, assignment);
+  assign(assignment, slotKey, dayKey) {
+    assignment.classroom.assignToSlot(slotKey, dayKey, assignment);
+    assignment.teacher.assignToSlot(slotKey, dayKey, assignment);
   }
 
-  unassign(assignment, slotKey, dayName) {
-    const { classroom, teacher } = assignment;
-    classroom.removeFromSlot(slotKey, dayName);
-    teacher.removeFromSlot(slotKey, dayName);
+  unassign(assignment, slotKey, dayKey) {
+    assignment.classroom.removeFromSlot(slotKey, dayKey);
+    assignment.teacher.removeFromSlot(slotKey, dayKey);
   }
 
   getStats() {
@@ -302,7 +248,7 @@ export class Schedule {
       slotsPerDay: this.slotsPerDay,
       weeklySlots: this.weeklySlots,
       assignments: this.assignments.length,
-      totalBlocks: this.assignments.reduce((sum, a) => sum + a.blocks.length, 0)
+      totalBlocks: this.assignments.reduce((s, a) => s + a.blocks.length, 0)
     };
   }
 }

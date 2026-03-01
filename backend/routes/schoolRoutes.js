@@ -1,10 +1,13 @@
 import express from 'express';
 import { getSchoolInfo, updateSchoolInfo } from '../controllers/schoolController.js';
-import auth from '../middleware/auth.js';  // 👈 Değişti
+import auth from '../middleware/auth.js';
 
 const router = express.Router();
 
-router.get('/', auth, getSchoolInfo);  // 👈 protect yerine auth
-router.put('/', auth, updateSchoolInfo);  // 👈 protect yerine auth
+// GET /api/school - Okul bilgisini getir
+router.get('/', auth, getSchoolInfo);
+
+// PUT /api/school - Okul bilgisini güncelle
+router.put('/', auth, updateSchoolInfo);
 
 export default router;

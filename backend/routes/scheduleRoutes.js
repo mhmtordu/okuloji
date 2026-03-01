@@ -1,25 +1,23 @@
-/**
- * SCHEDULE ROUTES (FINAL FIX)
- */
-
 import express from 'express';
-import { 
-  generateSchedule, 
-  getSchedule, 
-  deleteSchedule,
-  getScheduleByClassroom,
-  getScheduleByTeacher
+import {
+  generateSchedule,
+  getSchedule,
+  updateScheduleEntry,
+  deleteSchedule
 } from '../controllers/scheduleController.js';
-
-import auth from '../middleware/auth.js'; // ✅ DOĞRU: 'auth' olarak import et
 
 const router = express.Router();
 
-// Routes
-router.post('/generate', auth, generateSchedule);
-router.get('/', auth, getSchedule);
-router.delete('/', auth, deleteSchedule);
-router.get('/classroom/:classroom_id', auth, getScheduleByClassroom);
-router.get('/teacher/:teacher_id', auth, getScheduleByTeacher);
+// Program oluştur (algoritma çalıştır)
+router.post('/generate', generateSchedule);
+
+// Programı getir (sınıf veya öğretmen bazlı)
+router.get('/', getSchedule);
+
+// Tek hücre güncelle (yarı otomatik düzenleme)
+router.put('/:id', updateScheduleEntry);
+
+// Programı sıfırla
+router.delete('/school/:school_id', deleteSchedule);
 
 export default router;

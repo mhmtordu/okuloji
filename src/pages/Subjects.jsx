@@ -1,31 +1,23 @@
 import { useState, useEffect } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
-  LogOut,
-  Users,
   BookOpen,
-  Calendar,
-  Settings,
-  School,
-  Home,
-  FileText,
   Plus,
   Trash2,
-  Edit,
   AlertCircle,
   CheckCircle,
   Clock,
 } from "lucide-react";
+import Sidebar from "../components/Sidebar";
+import Header from "../components/Header";
 import "./Dashboard.css";
 
 function Subjects() {
   const navigate = useNavigate();
-  const [user, setUser] = useState(null);
   const [subjects, setSubjects] = useState([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ type: "", text: "" });
 
-  // Form state
   const [formData, setFormData] = useState({
     subject_name: "",
     subject_code: "",
@@ -33,7 +25,6 @@ function Subjects() {
     color: "#4338ca",
   });
 
-  // Renk seçenekleri
   const colorOptions = [
     { value: "#4338ca", name: "Lacivert" },
     { value: "#dc2626", name: "Kırmızı" },
@@ -47,17 +38,10 @@ function Subjects() {
 
   useEffect(() => {
     const token = localStorage.getItem("token");
-    const userData = localStorage.getItem("user");
-
     if (!token) {
       navigate("/login");
       return;
     }
-
-    if (userData) {
-      setUser(JSON.parse(userData));
-    }
-
     fetchSubjects();
   }, [navigate]);
 
@@ -65,9 +49,7 @@ function Subjects() {
     try {
       const token = localStorage.getItem("token");
       const response = await fetch("http://localhost:5000/api/subjects", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
       });
       const data = await response.json();
       if (data.success) {
@@ -79,11 +61,9 @@ function Subjects() {
     }
   };
 
-  // ← DEĞİŞİKLİK: handleChange fonksiyonu
   const handleChange = (e) => {
     const { name, value } = e.target;
 
-    // Ders adı için capitalize (Her kelimenin ilk harfi büyük)
     if (name === "subject_name") {
       const capitalized = value
         .split(' ')
@@ -92,25 +72,11 @@ function Subjects() {
           return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
         })
         .join(' ');
-
-      setFormData({
-        ...formData,
-        [name]: capitalized,
-      });
-    }
-    // Ders kodu için uppercase (Tümü büyük harf)
-    else if (name === "subject_code") {
-      setFormData({
-        ...formData,
-        [name]: value.toUpperCase(),
-      });
-    }
-    // Diğer alanlar normal
-    else {
-      setFormData({
-        ...formData,
-        [name]: value,
-      });
+      setFormData({ ...formData, [name]: capitalized });
+    } else if (name === "subject_code") {
+      setFormData({ ...formData, [name]: value.toUpperCase() });
+    } else {
+      setFormData({ ...formData, [name]: value });
     }
   };
 
@@ -160,9 +126,7 @@ function Subjects() {
       const token = localStorage.getItem("token");
       const response = await fetch(`http://localhost:5000/api/subjects/${id}`, {
         method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
       });
 
       const data = await response.json();
@@ -184,84 +148,12 @@ function Subjects() {
     navigate("/login");
   };
 
-  if (!user) {
-    return <div>Yükleniyor...</div>;
-  }
-
   return (
     <div className="dashboard">
-      {/* Sidebar */}
-      <aside className="sidebar">
-        <div className="sidebar-header">
-          <h2>Okuloji</h2>
-        </div>
+      <Sidebar onLogout={handleLogout} />
 
-        <nav className="sidebar-nav">
-          <Link to="/dashboard" className="nav-item">
-            <Home size={20} />
-            <span>Anasayfa</span>
-          </Link>
-          <Link to="/school-info" className="nav-item">
-            <School size={20} />
-            <span>Kurum Bilgileri</span>
-          </Link>
-          <Link to="/timeslots" className="nav-item">
-            <Clock size={20} />
-            <span>Zaman Dilimi Ayarları</span>
-          </Link>
-          <Link to="/classrooms" className="nav-item">
-            <BookOpen size={20} />
-            <span>Şube Bilgileri</span>
-          </Link>
-          <Link to="/subjects" className="nav-item active">
-            <BookOpen size={20} />
-            <span>Okutulacak Ders Bilgileri</span>
-          </Link>
-          <Link to="/teachers" className="nav-item">
-            <Users size={20} />
-            <span>Öğretmen Bilgileri</span>
-          </Link>
-          <Link to="/teacher-unavailability" className="nav-item">
-            <Users size={20} />
-            <span>Öğretmen Kısıtlamaları</span>
-          </Link>
-          <Link to="/subject-assignments" className="nav-item">
-            <Calendar size={20} />
-            <span>Ders Atamaları</span>
-          </Link>
-          <Link to="/schedules" className="nav-item">
-            <Calendar size={20} />
-            <span>Ders Programları</span>
-          </Link>
-          <Link to="/reports" className="nav-item">
-            <FileText size={20} />
-            <span>Raporlar</span>
-          </Link>
-          <Link to="/settings" className="nav-item">
-            <Settings size={20} />
-            <span>Ayarlar</span>
-          </Link>
-        </nav>
-
-        <div className="sidebar-footer">
-          <button onClick={handleLogout} className="logout-btn">
-            <LogOut size={20} />
-            <span>Çıkış Yap</span>
-          </button>
-        </div>
-      </aside>
-
-      {/* Main Content */}
       <main className="main-content">
-        <header className="dashboard-header">
-          <h1>📚 Okutulacak Ders Bilgileri</h1>
-          <div className="user-info">
-            <span>{user.email}</span>
-            <span className="badge">
-              {user.role === "admin" ? "Yönetici" : "Öğretmen"}
-            </span>
-          </div>
-        </header>
+        <Header />
 
         {message.text && (
           <div className={`message-box ${message.type}`}>
@@ -274,7 +166,6 @@ function Subjects() {
           </div>
         )}
 
-        {/* Ders Ekleme Formu */}
         <div className="form-container">
           <form onSubmit={handleSubmit} className="subject-form">
             <div className="form-section">
@@ -341,11 +232,7 @@ function Subjects() {
               </div>
 
               <div className="form-actions">
-                <button
-                  type="submit"
-                  className="btn-primary"
-                  disabled={loading}
-                >
+                <button type="submit" className="btn-primary" disabled={loading}>
                   {loading ? (
                     <>Ekleniyor...</>
                   ) : (
@@ -360,7 +247,6 @@ function Subjects() {
           </form>
         </div>
 
-        {/* Dersler Grid */}
         <div className="subjects-container">
           <h2>📖 Kayıtlı Dersler ({subjects.length})</h2>
           {subjects.length === 0 ? (
