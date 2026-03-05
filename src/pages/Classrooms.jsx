@@ -4,7 +4,6 @@ import {
   BookOpen,
   Plus,
   Trash2,
-  Edit,
   AlertCircle,
   CheckCircle,
 } from "lucide-react";
@@ -23,6 +22,7 @@ function Classrooms() {
     classroom_name: "",
     grade_level: "",
     guide_teacher_id: "",
+    shift: "sabah",
   });
 
   useEffect(() => {
@@ -95,6 +95,7 @@ function Classrooms() {
           classroom_name: "",
           grade_level: "",
           guide_teacher_id: "",
+          shift: "sabah",
         });
         fetchClassrooms();
       } else {
@@ -170,7 +171,7 @@ function Classrooms() {
                     value={formData.classroom_name}
                     onChange={handleChange}
                     required
-                    placeholder="Örn: 9-A"
+                    placeholder="Örn: 5-A"
                   />
                 </div>
 
@@ -211,6 +212,26 @@ function Classrooms() {
                     ))}
                   </select>
                 </div>
+
+                <div className="form-group">
+                  <label>Devre Grubu</label>
+                  <div className="shift-toggle">
+                    <button
+                      type="button"
+                      className={`toggle-btn ${formData.shift === "sabah" ? "active" : ""}`}
+                      onClick={() => setFormData({ ...formData, shift: "sabah" })}
+                    >
+                       Sabah
+                    </button>
+                    <button
+                      type="button"
+                      className={`toggle-btn ${formData.shift === "ogle" ? "active" : ""}`}
+                      onClick={() => setFormData({ ...formData, shift: "ogle" })}
+                    >
+                       Öğle
+                    </button>
+                  </div>
+                </div>
               </div>
 
               <div className="form-actions">
@@ -230,7 +251,7 @@ function Classrooms() {
         </div>
 
         <div className="classrooms-container">
-          <h2>📚 Kayıtlı Şubeler ({classrooms.length})</h2>
+          <h2>Kayıtlı Şubeler ({classrooms.length})</h2>
           {classrooms.length === 0 ? (
             <div className="empty-state">
               <BookOpen size={64} />
@@ -244,7 +265,11 @@ function Classrooms() {
                   <div className="classroom-info">
                     <h3>{classroom.classroom_name}</h3>
                     <p className="classroom-grade">
-                      {classroom.grade_level}. Sınıf
+                      {classroom.grade_level}. Sınıf  
+                    </p>
+                    <p>  </p>
+                    <p className={`classroom-shift ${classroom.shift || "sabah"}`}>
+                      {classroom.shift === "ogle" ? "Öğle Grubu" : "Sabah Grubu"}
                     </p>
                     {classroom.guide_teacher_name && (
                       <p className="classroom-teacher">

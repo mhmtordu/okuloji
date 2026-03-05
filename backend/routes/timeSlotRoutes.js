@@ -13,6 +13,9 @@ router.get('/', timeSlotController.getTimeSlots);
 // POST /api/timeslots - Yeni zaman dilimi ekle
 router.post('/', timeSlotController.createTimeSlot);
 
+// POST /api/timeslots/bulk - Toplu zaman dilimi ekle
+router.post('/bulk', timeSlotController.createBulkTimeSlots);
+
 // POST /api/timeslots/template - Standart şablon oluştur
 router.post('/template', timeSlotController.createStandardTemplate);
 

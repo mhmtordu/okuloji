@@ -175,7 +175,7 @@ function Teachers() {
                     name="email"
                     value={formData.email}
                     onChange={handleChange}
-                    placeholder="Örn: ahmet@okul.edu.tr"
+                    placeholder="Örn: ahmet@hotmail.com"
                   />
                 </div>
 

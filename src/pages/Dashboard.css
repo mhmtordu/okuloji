@@ -1126,3 +1126,54 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* ===================================
+   SHIFT TOGGLE (Devre Grubu)
+   =================================== */
+.shift-toggle {
+  display: flex;
+  gap: 8px;
+}
+
+.toggle-btn {
+  flex: 1;
+  padding: 0.75rem 1rem;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  background: white;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #64748b;
+  transition: all 0.2s;
+}
+
+.toggle-btn:hover {
+  border-color: var(--lacivert-400);
+  color: var(--lacivert-700);
+}
+
+.toggle-btn.active {
+  border-color: var(--lacivert-600);
+  background: var(--lacivert-700);
+  color: white;
+}
+
+.classroom-shift {
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.2rem 0.6rem;
+  border-radius: 5px;
+  display: inline-block;
+  margin-bottom: 0.25rem;
+}
+
+.classroom-shift.sabah {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.classroom-shift.ogle {
+  background: #d1fae5;
+  color: #065f46;
+}

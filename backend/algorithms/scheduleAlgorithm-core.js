@@ -1,11 +1,14 @@
 /**
- * scheduleAlgorithm-core.js (v4.0)
- * - Most Constrained First sıralaması
- * - MEB blok kuralları (structures.js'de)
- * - grade_level bazlı maxDailyHours
+ * scheduleAlgorithm-core.js (v6.0 - CSP + Backtracking)
+ *
+ * Faz 1: Domain hesapla — her atama için geçerli slot listesi
+ * Faz 2: MRV sırala — en az seçeneği olan atamayı önce yerleştir
+ * Faz 3: Greedy yerleştir — denge gözetarak en iyi slotu seç
+ * Faz 4: Backtracking — yerleşemeyen için swap/chain-swap dene
+ * Faz 5: Öneri motoru — hala yerleşemeyenlere çözüm öner
  */
 
-console.log('🔄 scheduleAlgorithm-core.js v4.0 YÜKLENDİ');
+console.log('🔄 scheduleAlgorithm-core.js v6.0 (CSP) YÜKLENDİ');
 
 import {
   Classroom, Teacher, Subject, TimeSlot, Assignment, Schedule
@@ -21,388 +24,500 @@ const DAY_MAP = {
 
 class ScheduleGenerator {
   constructor(options = {}) {
-    this.maxAttempts       = options.maxAttempts       || 100000;
-    this.maxRepairAttempts = options.maxRepairAttempts || 2000;
-    this.maxForceAttempts  = options.maxForceAttempts  || 1000;
-    this.attempts       = 0;
-    this.repairAttempts = 0;
-    this.forceAttempts  = 0;
     this.schedule = new Schedule();
+    this.attempts = 0;
+    this.repairAttempts = 0;
+    this.forceAttempts = 0;
+    this.suggestions = []; // Öneri motoru çıktısı
   }
 
+  // ─────────────────────────────────────────────
+  // VERİ HAZIRLAMA
+  // ─────────────────────────────────────────────
   async prepare(data) {
-    console.log('📊 Veri hazırlanıyor...');
-    this.prepareTimeSlots(data.timeSlots);
-    this.calculateDynamicSlots();
-    this.prepareClassrooms(data.classrooms);
-    this.prepareTeachers(data.teachers);
-    this.prepareTeacherUnavailability(data.teacherUnavailability);
-    this.prepareSubjects(data.subjectAssignments);
-    this.prepareAssignments(data.subjectAssignments);
-    const stats = this.schedule.getStats();
-    console.log('✅ Veri hazırlama tamamlandı!');
-    console.log(`   📚 ${stats.classrooms} sınıf, 👨‍🏫 ${stats.teachers} öğretmen`);
-    console.log(`   ⏰ ${stats.timeSlots} slot, 📝 ${stats.assignments} atama, 🔲 ${stats.totalBlocks} blok`);
+    this._prepareTimeSlots(data.timeSlots);
+    this._prepareClassrooms(data.classrooms);
+    this._prepareTeachers(data.teachers);
+    this._prepareUnavailability(data.teacherUnavailability);
+    this._prepareAssignments(data.subjectAssignments);
+    console.log(`✅ Hazır: ${this.schedule.classrooms.size} sınıf, ${this.schedule.teachers.size} öğretmen, ${this.schedule.timeSlots.length} slot, ${this.schedule.assignments.length} atama`);
   }
 
-  prepareTimeSlots(timeSlotsData) {
-    timeSlotsData.forEach(ts => {
-      const dayInfo = DAY_MAP[ts.day_of_week];
-      if (!dayInfo) { console.warn(`⚠️ Bilinmeyen day_of_week: ${ts.day_of_week}`); return; }
-      const timeSlot = new TimeSlot(
-        ts.time_slot_id, ts.day_of_week,
-        dayInfo.name, dayInfo.key,
-        ts.period, ts.start_time, ts.end_time,
-        ts.is_break || false
+  _prepareTimeSlots(data) {
+    data.forEach(ts => {
+      const d = DAY_MAP[ts.day_of_week];
+      if (!d || ts.is_break) return;
+      this.schedule.timeSlots.push(new TimeSlot(
+        ts.time_slot_id, ts.day_of_week, d.name, d.key,
+        ts.period, ts.start_time, ts.end_time
+      ));
+    });
+    this.schedule.slotsPerDay = this.schedule.timeSlots.filter(t => t.dayOfWeek === 1).length;
+  }
+
+  _prepareClassrooms(data) {
+    data.forEach(c => {
+      const maxWeekly = String(c.grade_level) === '8' ? 35 : 40;
+      this.schedule.classrooms.set(
+        c.classroom_id,
+        new Classroom(c.classroom_id, c.classroom_name, c.grade_level, maxWeekly, c.shift || 'sabah')
       );
-      if (!timeSlot.isBreak) this.schedule.timeSlots.push(timeSlot);
     });
   }
 
-  calculateDynamicSlots() {
-    const firstDaySlots = this.schedule.timeSlots.filter(ts => ts.dayOfWeek === 1);
-    this.schedule.slotsPerDay = firstDaySlots.length;
-    this.schedule.weeklySlots = this.schedule.slotsPerDay * 5;
-    if (this.schedule.slotsPerDay === 0)
-      throw new Error('Günlük ders sayısı 0! time_slots tablosunu kontrol et.');
-    console.log(`   ⏰ Günlük ${this.schedule.slotsPerDay} slot, haftalık ${this.schedule.weeklySlots} slot`);
-  }
-
-  prepareClassrooms(classroomsData) {
-    classroomsData.forEach(c => {
-      const maxWeeklyHours = String(c.grade_level) === '8' ? 35 : 40;
-      const classroom = new Classroom(c.classroom_id, c.classroom_name, c.grade_level, maxWeeklyHours);
-      this.schedule.classrooms.set(classroom.id, classroom);
-    });
-  }
-
-  prepareTeachers(teachersData) {
-    teachersData.forEach(t => {
+  _prepareTeachers(data) {
+    data.forEach(t => {
       this.schedule.teachers.set(t.user_id, new Teacher(t.user_id, t.full_name, t.branch));
     });
   }
 
-  prepareTeacherUnavailability(unavailabilityData) {
-    if (!unavailabilityData || unavailabilityData.length === 0) return;
-    let count = 0;
-    unavailabilityData.forEach(u => {
-      const teacher = this.schedule.teachers.get(u.teacher_id);
-      if (teacher && u.time_slot_id) { teacher.addUnavailableSlot(u.time_slot_id); count++; }
+  _prepareUnavailability(data) {
+    if (!data?.length) return;
+    data.forEach(u => {
+      const t = this.schedule.teachers.get(u.teacher_id);
+      if (t) t.addUnavailableSlot(u.time_slot_id);
     });
-    console.log(`   ⚠️ ${count} öğretmen kısıtlaması eklendi`);
   }
 
-  prepareSubjects(assignmentsData) {
-    const subjectsMap = new Map();
-    assignmentsData.forEach(a => {
-      if (!subjectsMap.has(a.subject_id))
-        subjectsMap.set(a.subject_id, new Subject(
-          a.subject_id, a.subject_name, a.subject_code, a.weekly_hours, a.color
-        ));
+  _prepareAssignments(data) {
+    const subjects = new Map();
+    data.forEach(a => {
+      if (!subjects.has(a.subject_id))
+        subjects.set(a.subject_id, new Subject(a.subject_id, a.subject_name, a.subject_code, a.weekly_hours, a.color));
     });
-    this.schedule.subjects = subjectsMap;
-  }
+    this.schedule.subjects = subjects;
 
-  prepareAssignments(assignmentsData) {
-    assignmentsData.forEach(a => {
+    data.forEach(a => {
       const classroom = this.schedule.classrooms.get(a.classroom_id);
-      const subject   = this.schedule.subjects.get(a.subject_id);
+      const subject   = subjects.get(a.subject_id);
       const teacher   = this.schedule.teachers.get(a.teacher_id);
-      if (classroom && subject && teacher)
-        this.schedule.assignments.push(new Assignment(
-          a.assignment_id, classroom, subject, teacher, a.weekly_hours
-        ));
-      else
+      if (!classroom || !subject || !teacher) {
         console.warn(`⚠️ Eksik: classroom=${a.classroom_id} subject=${a.subject_id} teacher=${a.teacher_id}`);
-    });
-
-    // Most Constrained First sıralaması
-    const teacherClassroomCount = new Map();
-    const teacherUnavailableCount = new Map();
-
-    this.schedule.assignments.forEach(a => {
-      const tid = a.teacher.id;
-      teacherClassroomCount.set(tid, (teacherClassroomCount.get(tid) || 0) + 1);
-      teacherUnavailableCount.set(tid, a.teacher.unavailableSlots.size);
-    });
-
-    this.schedule.assignments.sort((a, b) => {
-      // 1. Önce unavailable slot sayısı fazla olan (en kısıtlı öğretmen)
-      const unavailA = teacherUnavailableCount.get(a.teacher.id) || 0;
-      const unavailB = teacherUnavailableCount.get(b.teacher.id) || 0;
-      if (unavailB !== unavailA) return unavailB - unavailA;
-
-      // 2. Sonra çok sınıfa giren öğretmen
-      const classCountA = teacherClassroomCount.get(a.teacher.id) || 0;
-      const classCountB = teacherClassroomCount.get(b.teacher.id) || 0;
-      if (classCountB !== classCountA) return classCountB - classCountA;
-
-      // 3. Son olarak haftalık saat fazla olan
-      return b.weeklyHours - a.weeklyHours;
-    });
-
-    console.log(`   📝 ${this.schedule.assignments.length} atama Most Constrained First ile sıralandı`);
-    console.log('   İlk 5 atama:');
-    this.schedule.assignments.slice(0, 5).forEach(a => {
-      const sinifSayisi = teacherClassroomCount.get(a.teacher.id) || 0;
-      const kisitSayisi = teacherUnavailableCount.get(a.teacher.id) || 0;
-      console.log(`      → ${a.teacher.name} | ${a.classroom.name} | ${a.subject.name} | ${a.weeklyHours}s | ${sinifSayisi}sınıf | ${kisitSayisi}kısıt`);
+        return;
+      }
+      this.schedule.assignments.push(new Assignment(a.assignment_id, classroom, subject, teacher, a.weekly_hours));
     });
   }
 
+  // ─────────────────────────────────────────────
+  // ANA ÜRETIM
+  // ─────────────────────────────────────────────
   async generate() {
-    console.log('🚀 Algoritma başlıyor...');
-    const startTime = Date.now();
+    const start = Date.now();
+    console.log('\n🚀 CSP Algoritması başlıyor...');
 
-    console.log('\n📌 PHASE 1: GREEDY');
-    this.greedyPlacement();
-    let progress = this.getProgress();
-    console.log(`   ✅ Greedy: %${progress.progress} (${progress.assignedBlocks}/${progress.totalBlocks})`);
+    // FAZ 1: MRV sıralaması — en kısıtlı atamayı önce yerleştir
+    this._sortByMRV();
 
-    if (progress.remaining > 0) {
-      console.log('\n🔧 PHASE 2: REPAIR');
-      this.repairUnassigned();
-      progress = this.getProgress();
-      console.log(`   ✅ Repair: %${progress.progress}`);
+    // FAZ 2: Greedy yerleştirme
+    console.log('📌 FAZ 1: GREEDY');
+    this._greedy();
+    let p = this.getProgress();
+    console.log(`   ✅ ${p.assignedBlocks}/${p.totalBlocks} blok (%${p.progress})`);
+
+    // FAZ 3: Backtracking ile swap
+    if (p.remaining > 0) {
+      console.log('🔧 FAZ 2: BACKTRACKING');
+      this._backtrack();
+      p = this.getProgress();
+      console.log(`   ✅ ${p.assignedBlocks}/${p.totalBlocks} blok (%${p.progress})`);
     }
 
-    console.log('\n⚖️ PHASE 3: BALANCE');
-    this.balanceDailyLoads();
-
-    if (progress.remaining > 0) {
-      console.log('\n💪 PHASE 4: FORCE');
-      this.forcePlacement();
-      progress = this.getProgress();
-      console.log(`   ✅ Force: %${progress.progress}`);
+    // FAZ 4: Chain swap — daha derin takas
+    if (p.remaining > 0) {
+      console.log('🔗 FAZ 3: CHAIN SWAP');
+      this._chainSwap();
+      p = this.getProgress();
+      console.log(`   ✅ ${p.assignedBlocks}/${p.totalBlocks} blok (%${p.progress})`);
     }
 
-    progress = this.getProgress();
-    console.log(`\n⏱️ Süre: ${Date.now() - startTime}ms`);
-    console.log(`📊 Sonuç: %${progress.progress} (${progress.assignedBlocks}/${progress.totalBlocks})`);
+    // FAZ 5: Öneri motoru
+    if (p.remaining > 0) {
+      console.log('💡 FAZ 4: ÖNERİ MOTORU');
+      this._buildSuggestions();
+      console.log(`   💡 ${this.suggestions.length} öneri üretildi`);
+    }
+
+    console.log(`\n⏱️ Süre: ${Date.now() - start}ms`);
+    console.log(`📊 Sonuç: %${p.progress} (${p.assignedBlocks}/${p.totalBlocks})`);
     return this.schedule;
   }
 
-  greedyPlacement() {
+  // ─────────────────────────────────────────────
+  // MRV: En kısıtlı atamayı önce sırala
+  // ─────────────────────────────────────────────
+  _sortByMRV() {
+    // Her atama için domain büyüklüğünü hesapla
+    this.schedule.assignments.sort((a, b) => {
+      const domainA = this._getDomainSize(a);
+      const domainB = this._getDomainSize(b);
+      if (domainA !== domainB) return domainA - domainB; // az domain önce
+      // Eşitse öğretmenin kaç sınıfa girdiğine bak
+      const loadA = this._getTeacherClassCount(a.teacher.id);
+      const loadB = this._getTeacherClassCount(b.teacher.id);
+      return loadB - loadA; // çok sınıfa giren önce
+    });
+  }
+
+  _getDomainSize(assignment) {
+    const slots = this._getValidSlots(assignment.classroom, assignment.teacher, 2);
+    return slots.length;
+  }
+
+  _getTeacherClassCount(teacherId) {
+    return this.schedule.assignments.filter(a => a.teacher.id === teacherId).length;
+  }
+
+  // ─────────────────────────────────────────────
+  // FAZ 1: GREEDY
+  // ─────────────────────────────────────────────
+  _greedy() {
     for (const assignment of this.schedule.assignments) {
       for (const block of assignment.blocks) {
         if (block.isAssigned()) continue;
         this.attempts++;
-        if (this.attempts > this.maxAttempts) return;
-        const slots = this.findBestSlots(assignment, block);
-        if (slots) this.assignBlock(assignment, block, slots);
+        const slots = this._findBestSlots(assignment, block.size);
+        if (slots) this._assign(assignment, block, slots);
       }
     }
   }
 
-  findBestSlots(assignment, block, ignoreBalance = false) {
+  // En iyi slot: denge + shift + ardışıklık
+  _findBestSlots(assignment, size) {
     const { classroom, teacher } = assignment;
-    const blockSize = block.size;
-    const slotsByDay = this.groupSlotsByDay();
-    let bestSlots = null;
-    let bestScore = -Infinity;
+    const validSlots = this._getValidSlots(classroom, teacher, size);
+    if (validSlots.length === 0) return null;
 
-    for (const [dayKey, daySlots] of Object.entries(slotsByDay)) {
-      if (!ignoreBalance) {
-        const classroomLoad = classroom.getDailyHours(dayKey);
-        if (classroomLoad + blockSize > classroom.maxDailyHours) continue;
+    // En iyi slotu seç: o günde en az ders olan gün
+    let best = null;
+    let bestScore = Infinity;
 
-        // Aynı gün aynı dersten max 1 blok (2+2+1 dağılımı için)
-        if (assignment.getBlocksOnDay(dayKey) >= 1 && blockSize === 2) continue;
+    for (const slotGroup of validSlots) {
+      const dayKey = slotGroup[0].dayKey;
+      const classroomDaily = classroom.getDailyHours(dayKey);
+      const teacherDaily   = teacher.getDailyHours(dayKey);
+
+      // Aynı dersin aynı günde tekrar olmasını engelle
+      const alreadyOnDay = assignment.assignedSlots.some(k => k.startsWith(dayKey));
+      const penalty = alreadyOnDay ? 100 : 0;
+
+      const score = classroomDaily + teacherDaily + penalty;
+      if (score < bestScore) {
+        bestScore = score;
+        best = slotGroup;
       }
+    }
+    return best;
+  }
 
-      for (let i = 0; i <= daySlots.length - blockSize; i++) {
-        const consecutiveSlots = daySlots.slice(i, i + blockSize);
-        const allAvailable = consecutiveSlots.every(slot =>
-          !this.schedule.hasConflict(classroom, teacher, slot.getKey(), slot.id).conflict
-        );
-        if (allAvailable) {
-          const score = this.scoreSlots(consecutiveSlots, assignment, dayKey, ignoreBalance);
-          if (score > bestScore) { bestScore = score; bestSlots = consecutiveSlots; }
+  // Shift'e göre filtrelenmiş geçerli ardışık slot grupları
+  _getValidSlots(classroom, teacher, size) {
+    const byDay = this._slotsByDay();
+    const result = [];
+
+    for (const [dayKey, slots] of Object.entries(byDay)) {
+      // Shift filtresi
+      const filtered = slots.filter(s => {
+        if (classroom.shift === 'sabah') return s.period <= 7;
+        if (classroom.shift === 'ogle')  return s.period >= 8;
+        return true;
+      });
+
+      // Ardışık gruplar bul
+      for (let i = 0; i <= filtered.length - size; i++) {
+        const group = filtered.slice(i, i + size);
+        // Ardışık mı kontrol et
+        let isConsecutive = true;
+        for (let j = 1; j < group.length; j++) {
+          if (group[j].period !== group[j-1].period + 1) { isConsecutive = false; break; }
         }
+        if (!isConsecutive) continue;
+
+        const ok = group.every(slot =>
+          classroom.isSlotEmpty(slot.getKey()) &&
+          teacher.isAvailable(slot.getKey(), slot.id)
+        );
+        if (ok) result.push(group);
       }
     }
-    return bestSlots;
+    return result;
   }
 
-  scoreSlots(slots, assignment, dayKey, ignoreBalance = false) {
-    let score = 1000;
-    const { classroom, teacher } = assignment;
-
-    if (!ignoreBalance) {
-      score += (classroom.maxDailyHours - classroom.getDailyHours(dayKey)) * 20;
-    }
-
-    score -= teacher.getDailyHours(dayKey) * 5;
-
-    // Aynı dersin aynı günde ikinci bloğuna düşük puan (dağıtım için)
-    if (assignment.getBlocksOnDay(dayKey) > 0) score -= 30;
-
-    // Sabah dersleri tercih edilsin
-    score += (10 - slots[0].period) * 3;
-
-    return score;
-  }
-
-  assignBlock(assignment, block, slots) {
+  _assign(assignment, block, slots) {
     const dayKey = slots[0].dayKey;
-    const slotKeys = [];
     for (const slot of slots) {
       this.schedule.assign(assignment, slot.getKey(), dayKey);
-      slotKeys.push(slot.getKey());
     }
-    assignment.addBlock(block, slotKeys);
-    return true;
+    assignment.addBlock(block, slots.map(s => s.getKey()));
   }
 
-  repairUnassigned() {
-    const unassigned = this.getUnassignedBlocks();
-    console.log(`   🔧 ${unassigned.length} blok repair ediliyor...`);
-    for (const { assignment, block } of unassigned) {
-      if (this.repairAttempts > this.maxRepairAttempts) break;
-      this.trySwapRepair(assignment, block);
+  _unassign(assignment, block) {
+    if (!block.isAssigned()) return;
+    for (const key of [...block.slots]) {
+      const [dayKey] = key.split('-');
+      this.schedule.unassign(assignment, key, dayKey);
     }
-  }
-
-  getUnassignedBlocks() {
-    const unassigned = [];
-    for (const assignment of this.schedule.assignments)
-      for (const block of assignment.blocks)
-        if (!block.isAssigned()) unassigned.push({ assignment, block });
-    return unassigned;
-  }
-
-  trySwapRepair(assignment, block) {
-    this.repairAttempts++;
-    const swapCandidates = this.findSwapCandidates(assignment.classroom, block.size);
-    for (const candidate of swapCandidates) {
-      const candidateSlots = candidate.slots;
-      this.unassignBlock(candidate.assignment, candidate.block, candidate.slots);
-      const newSlots = this.findBestSlots(assignment, block);
-      if (newSlots) {
-        this.assignBlock(assignment, block, newSlots);
-        const oldSlots = this.findBestSlots(candidate.assignment, candidate.block);
-        if (oldSlots) {
-          this.assignBlock(candidate.assignment, candidate.block, oldSlots);
-          return true;
-        } else {
-          this.unassignBlock(assignment, block, newSlots);
-          this.assignBlock(candidate.assignment, candidate.block, candidateSlots);
-        }
-      } else {
-        this.assignBlock(candidate.assignment, candidate.block, candidateSlots);
-      }
-    }
-    return false;
-  }
-
-  findSwapCandidates(classroom, neededSize) {
-    const candidates = [];
-    for (const assignment of this.schedule.assignments) {
-      if (assignment.classroom.id !== classroom.id) continue;
-      for (const block of assignment.blocks) {
-        if (!block.isAssigned() || block.size < neededSize) continue;
-        const slots = block.slots.map(key => {
-          const [dayKey, period] = key.split('-');
-          return this.schedule.timeSlots.find(
-            ts => ts.dayKey === dayKey && ts.period === parseInt(period)
-          );
-        }).filter(Boolean);
-        if (slots.length === block.slots.length)
-          candidates.push({ assignment, block, slots });
-      }
-    }
-    return candidates;
-  }
-
-  unassignBlock(assignment, block, slots) {
-    if (!slots || slots.length === 0) return;
-    const dayKey = slots[0].dayKey;
-    for (const slot of slots) this.schedule.unassign(assignment, slot.getKey(), dayKey);
     assignment.removeBlock(block);
   }
 
-  balanceDailyLoads() {
-    let imbalanced = 0;
-    this.schedule.classrooms.forEach(classroom => {
-      Object.entries(classroom.dailyHours).forEach(([, hours]) => {
-        if (Math.abs(hours - classroom.maxDailyHours) > 2) imbalanced++;
-      });
-    });
-    console.log(imbalanced > 0 ? `   ⚠️ ${imbalanced} gün dengesiz` : `   ✅ Dağılım dengeli`);
-  }
+  // ─────────────────────────────────────────────
+  // FAZ 2: BACKTRACKING — swap ile yerleştir
+  // ─────────────────────────────────────────────
+  _backtrack() {
+    const unassigned = this._getUnassigned();
+    console.log(`   🔧 ${unassigned.length} blok için backtracking...`);
 
-  forcePlacement() {
-    const unassigned = this.getUnassignedBlocks();
-    console.log(`   💪 ${unassigned.length} blok zorla yerleştiriliyor...`);
     for (const { assignment, block } of unassigned) {
-      if (this.forceAttempts > this.maxForceAttempts) break;
-      this.forceAttempts++;
-      const slots = this.findBestSlots(assignment, block, true);
-      if (slots) this.assignBlock(assignment, block, slots);
-      else this.forceSplitPlacement(assignment, block);
+      this.repairAttempts++;
+      if (this._trySwap(assignment, block)) continue;
     }
   }
 
-  forceSplitPlacement(assignment, block) {
-    const { classroom, teacher } = assignment;
-    const foundSlots = [];
-    for (const [, daySlots] of Object.entries(this.groupSlotsByDay())) {
-      if (foundSlots.length >= block.size) break;
-      for (const slot of daySlots) {
-        if (foundSlots.length >= block.size) break;
-        if (!this.schedule.hasConflict(classroom, teacher, slot.getKey(), slot.id).conflict)
-          foundSlots.push(slot);
+  _trySwap(assignment, block) {
+    // Aynı sınıftaki atanmış blokları bul
+    for (const other of this.schedule.assignments) {
+      if (other.id === assignment.id) continue;
+      if (other.classroom.id !== assignment.classroom.id) continue;
+
+      for (const otherBlock of other.blocks) {
+        if (!otherBlock.isAssigned()) continue;
+
+        const savedSlots = [...otherBlock.slots];
+        this._unassign(other, otherBlock);
+
+        // Yeni atamayı dene
+        const newSlots = this._findBestSlots(assignment, block.size);
+        if (newSlots) {
+          this._assign(assignment, block, newSlots);
+          // Eski atamayı yeni yere koymayı dene
+          const oldNewSlots = this._findBestSlots(other, otherBlock.size);
+          if (oldNewSlots) {
+            this._assign(other, otherBlock, oldNewSlots);
+            return true;
+          }
+          // Olmadı, geri al
+          this._unassign(assignment, block);
+        }
+
+        // Eski atamayı eski yerine geri koy
+        const restored = savedSlots.map(key => {
+          const [dayKey, period] = key.split('-');
+          return this.schedule.timeSlots.find(ts => ts.dayKey === dayKey && ts.period === parseInt(period));
+        }).filter(Boolean);
+
+        if (restored.length === otherBlock.size) {
+          this._assign(other, otherBlock, restored);
+        }
       }
-    }
-    if (foundSlots.length >= block.size) {
-      this.assignBlock(assignment, block, foundSlots.slice(0, block.size));
-      return true;
     }
     return false;
   }
 
-  groupSlotsByDay() {
+  // ─────────────────────────────────────────────
+  // FAZ 3: CHAIN SWAP — öğretmen bazlı derin takas
+  // ─────────────────────────────────────────────
+  _chainSwap() {
+    const unassigned = this._getUnassigned();
+    console.log(`   🔗 ${unassigned.length} blok için chain swap...`);
+
+    for (const { assignment, block } of unassigned) {
+      this.forceAttempts++;
+
+      // Aynı öğretmenin diğer sınıflardaki bloklarını bak
+      const teacherBlocks = [];
+      for (const other of this.schedule.assignments) {
+        if (other.teacher.id !== assignment.teacher.id) continue;
+        if (other.id === assignment.id) continue;
+        for (const ob of other.blocks) {
+          if (ob.isAssigned()) teacherBlocks.push({ assignment: other, block: ob });
+        }
+      }
+
+      // Öğretmenin mevcut bloklarından birini kaldır, boşalan slota yeni bloğu yerleştir
+      for (const { assignment: other, block: otherBlock } of teacherBlocks) {
+        const savedSlots = [...otherBlock.slots];
+        this._unassign(other, otherBlock);
+
+        const newSlots = this._findBestSlots(assignment, block.size);
+        if (newSlots) {
+          this._assign(assignment, block, newSlots);
+          const restore = this._findBestSlots(other, otherBlock.size);
+          if (restore) {
+            this._assign(other, otherBlock, restore);
+            break;
+          }
+          this._unassign(assignment, block);
+        }
+
+        // Geri koy
+        const restored = savedSlots.map(key => {
+          const [dayKey, period] = key.split('-');
+          return this.schedule.timeSlots.find(ts => ts.dayKey === dayKey && ts.period === parseInt(period));
+        }).filter(Boolean);
+        if (restored.length === otherBlock.size) this._assign(other, otherBlock, restored);
+      }
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // FAZ 4: ÖNERİ MOTORU
+  // Yerleşemeyen her blok için "şu öğretmenin şu saati müsait olsa yerleşir" önerisi
+  // ─────────────────────────────────────────────
+  _buildSuggestions() {
+    const unassigned = this._getUnassigned();
+    this.suggestions = [];
+
+    for (const { assignment, block } of unassigned) {
+      const { classroom, teacher } = assignment;
+      const suggestion = {
+        classroom:   classroom.name,
+        subject:     assignment.subject.name,
+        teacher:     teacher.name,
+        blockSize:   block.size,
+        weeklyHours: assignment.weeklyHours,
+        reason:      '',
+        options:     [],
+      };
+
+      // Shift'e uygun tüm slotları tara
+      const shiftSlots = this.schedule.timeSlots.filter(s => {
+        if (classroom.shift === 'sabah') return s.period <= 7;
+        if (classroom.shift === 'ogle')  return s.period >= 8;
+        return true;
+      });
+
+      // Sınıf dolu mu?
+      const classroomFull = shiftSlots.every(s => !classroom.isSlotEmpty(s.getKey()));
+      if (classroomFull) {
+        suggestion.reason = `${classroom.name} sınıfı shift saatlerinde tamamen dolu`;
+        this.suggestions.push(suggestion);
+        continue;
+      }
+
+      // Öğretmen çakışmalarını bul
+      const blockedByTeacher = [];
+      for (const slot of shiftSlots) {
+        if (!classroom.isSlotEmpty(slot.getKey())) continue;
+        if (!teacher.isAvailable(slot.getKey(), slot.id)) {
+          if (teacher.isSlotUnavailable(slot.id)) {
+            blockedByTeacher.push({
+              type: 'unavailability',
+              day:  slot.dayName,
+              period: slot.period,
+              slotId: slot.id,
+              message: `${teacher.name} - ${slot.dayName} ${slot.period}. saat müsait değil (kısıtlama)`
+            });
+          } else {
+            // Başka sınıfta ders var
+            const conflictAssignment = teacher.schedule[slot.getKey()];
+            blockedByTeacher.push({
+              type: 'conflict',
+              day:  slot.dayName,
+              period: slot.period,
+              slotId: slot.id,
+              conflictClass: conflictAssignment?.classroom?.name || '?',
+              message: `${teacher.name} - ${slot.dayName} ${slot.period}. saatte ${conflictAssignment?.classroom?.name || '?'} sınıfında ders veriyor`
+            });
+          }
+        }
+      }
+
+      // Öneri: Eğer unavailability kısıtı kaldırılırsa yerleşebilir mi?
+      const unavailableBlocking = blockedByTeacher.filter(b => b.type === 'unavailability');
+      if (unavailableBlocking.length > 0 && block.size <= 2) {
+        // Geçici olarak kısıtı kaldırıp dene
+        for (const blocked of unavailableBlocking) {
+          teacher.unavailableSlots.delete(blocked.slotId);
+          const testSlots = this._findBestSlots(assignment, block.size);
+          teacher.unavailableSlots.add(blocked.slotId);
+
+          if (testSlots) {
+            suggestion.options.push({
+              action: 'remove_unavailability',
+              teacher: teacher.name,
+              day: blocked.day,
+              period: blocked.period,
+              slotId: blocked.slotId,
+              message: `${teacher.name} öğretmeninin ${blocked.day} ${blocked.period}. saatindeki müsait olmama kısıtı kaldırılırsa bu ders yerleşebilir`
+            });
+          }
+        }
+      }
+
+      if (suggestion.options.length === 0 && blockedByTeacher.length > 0) {
+        suggestion.reason = `${teacher.name} shift saatlerinde tüm uygun slotlarda başka dersler var`;
+        // Çakışan dersleri listele
+        const conflicts = blockedByTeacher.filter(b => b.type === 'conflict').slice(0, 3);
+        conflicts.forEach(c => suggestion.options.push({
+          action: 'info',
+          message: c.message
+        }));
+      } else if (suggestion.options.length === 0) {
+        suggestion.reason = 'Uygun slot bulunamadı';
+      }
+
+      this.suggestions.push(suggestion);
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // YARDIMCI METODLAR
+  // ─────────────────────────────────────────────
+  _slotsByDay() {
     const grouped = {};
-    this.schedule.timeSlots.forEach(slot => {
+    for (const slot of this.schedule.timeSlots) {
       if (!grouped[slot.dayKey]) grouped[slot.dayKey] = [];
       grouped[slot.dayKey].push(slot);
-    });
-    Object.values(grouped).forEach(arr => arr.sort((a, b) => a.period - b.period));
+    }
+    for (const arr of Object.values(grouped)) arr.sort((a, b) => a.period - b.period);
     return grouped;
   }
 
+  _getUnassigned() {
+    const list = [];
+    for (const a of this.schedule.assignments)
+      for (const b of a.blocks)
+        if (!b.isAssigned()) list.push({ assignment: a, block: b });
+    return list;
+  }
+
   getProgress() {
-    let totalBlocks = 0, assignedBlocks = 0;
-    this.schedule.assignments.forEach(a => {
-      totalBlocks += a.blocks.length;
-      assignedBlocks += a.getAssignedBlockCount();
-    });
+    let total = 0, assigned = 0;
+    for (const a of this.schedule.assignments) {
+      total    += a.blocks.length;
+      assigned += a.getAssignedBlockCount();
+    }
     return {
-      progress: totalBlocks > 0 ? ((assignedBlocks / totalBlocks) * 100).toFixed(2) : 0,
-      assignedBlocks, totalBlocks,
-      remaining: totalBlocks - assignedBlocks
+      progress:       total > 0 ? ((assigned / total) * 100).toFixed(2) : '0.00',
+      assignedBlocks: assigned,
+      totalBlocks:    total,
+      remaining:      total - assigned,
     };
   }
 
   validate() {
     const errors = [];
-    for (const assignment of this.schedule.assignments) {
-      if (!assignment.isComplete()) {
+    for (const a of this.schedule.assignments) {
+      if (!a.isComplete()) {
         errors.push({
-          classroom: assignment.classroom.name,
-          subject:   assignment.subject.name,
-          teacher:   assignment.teacher.name,
-          required:  assignment.weeklyHours,
-          assigned:  assignment.assignedHours,
-          missing:   assignment.weeklyHours - assignment.assignedHours
+          classroom: a.classroom.name,
+          subject:   a.subject.name,
+          teacher:   a.teacher.name,
+          required:  a.weeklyHours,
+          assigned:  a.assignedHours,
+          missing:   a.weeklyHours - a.assignedHours,
         });
       }
     }
     return {
-      isValid: errors.length === 0,
+      isValid:  errors.length === 0,
       errors,
-      summary: `${this.schedule.assignments.length - errors.length}/${this.schedule.assignments.length} atama tamamlandı`
+      summary:  `${this.schedule.assignments.length - errors.length}/${this.schedule.assignments.length} atama tamamlandı`,
     };
+  }
+
+  getSuggestions() {
+    return this.suggestions;
   }
 
   toDBFormat(schoolId) {

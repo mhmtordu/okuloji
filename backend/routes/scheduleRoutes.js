@@ -1,6 +1,7 @@
 import express from 'express';
 import {
   generateSchedule,
+  debugSchedule,
   getSchedule,
   updateScheduleEntry,
   deleteSchedule
@@ -10,6 +11,9 @@ const router = express.Router();
 
 // Program oluştur (algoritma çalıştır)
 router.post('/generate', generateSchedule);
+
+// Debug - yerleşemeyen blokları analiz et
+router.post('/debug', debugSchedule);
 
 // Programı getir (sınıf veya öğretmen bazlı)
 router.get('/', getSchedule);

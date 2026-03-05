@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import {
   LogOut, Users, BookOpen, Calendar, Settings, School,
-  Home, FileText, Clock, RefreshCw, Printer, AlertCircle, CheckCircle
+  Home, FileText, Clock, RefreshCw, Printer, AlertCircle, CheckCircle, ArrowRight
 } from 'lucide-react';
 
 const API_URL = 'http://localhost:5000/api';
@@ -13,17 +13,19 @@ const DAYS = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma'];
 export default function Schedules() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
+  const [schoolName, setSchoolName] = useState('');
   const [classrooms, setClassrooms] = useState([]);
   const [teachers, setTeachers] = useState([]);
   const [scheduleData, setScheduleData] = useState([]);
   const [timeSlots, setTimeSlots] = useState([]);
-  const [viewMode, setViewMode] = useState('classroom'); // 'classroom' | 'teacher'
+  const [viewMode, setViewMode] = useState('classroom');
   const [selectedClassroom, setSelectedClassroom] = useState('');
   const [selectedTeacher, setSelectedTeacher] = useState('');
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
   const [stats, setStats] = useState(null);
+  const [unplaced, setUnplaced] = useState([]);
 
   const getSchoolId = () => JSON.parse(localStorage.getItem('user') || '{}').schoolId;
   const getToken = () => localStorage.getItem('token');
@@ -35,12 +37,23 @@ export default function Schedules() {
     fetchClassrooms();
     fetchTeachers();
     fetchTimeSlots();
+    fetchSchoolName();
   }, [navigate]);
 
   useEffect(() => {
     if (viewMode === 'classroom' && selectedClassroom) fetchSchedule();
     if (viewMode === 'teacher' && selectedTeacher) fetchSchedule();
   }, [selectedClassroom, selectedTeacher, viewMode]);
+
+  const fetchSchoolName = async () => {
+    try {
+      const res = await axios.get(`${API_URL}/schools/${getSchoolId()}`, {
+        headers: { Authorization: `Bearer ${getToken()}` }
+      });
+      const data = res.data.school || res.data.data || res.data;
+      setSchoolName(data.school_name || '');
+    } catch (e) { console.error(e); }
+  };
 
   const fetchClassrooms = async () => {
     try {
@@ -80,6 +93,7 @@ export default function Schedules() {
     if (!window.confirm('Mevcut program silinip yeniden oluşturulacak. Devam edilsin mi?')) return;
     setGenerating(true);
     setMessage({ type: '', text: '' });
+    setUnplaced([]);
     try {
       const res = await axios.post(`${API_URL}/schedules/generate`,
         { school_id: getSchoolId() },
@@ -87,34 +101,52 @@ export default function Schedules() {
       );
       setStats(res.data.stats);
       setMessage({ type: 'success', text: `Program oluşturuldu! %${res.data.stats.successRate} başarı (${res.data.stats.placedBlocks}/${res.data.stats.totalBlocks} blok)` });
+
+      // Yerleşmeyen varsa debug endpoint'i çağır
+      if (res.data.stats.placedBlocks < res.data.stats.totalBlocks) {
+        fetchUnplaced();
+      }
+
       if (selectedClassroom || selectedTeacher) fetchSchedule();
     } catch (e) {
       setMessage({ type: 'error', text: e.response?.data?.message || 'Hata oluştu!' });
     } finally { setGenerating(false); }
   };
 
-  // Grid oluştur: { 'Pazartesi': { 1: {...}, 2: {...} }, ... }
+  const fetchUnplaced = async () => {
+    try {
+      const res = await axios.post(`${API_URL}/schedules/debug`,
+        { school_id: getSchoolId() },
+        { headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' } }
+      );
+      setUnplaced(res.data.unplaced || []);
+    } catch (e) { console.error(e); }
+  };
+
+  // Yerleşmeyen derse git: o sınıfı seç
+  const handleGoToUnplaced = (item) => {
+    const classroom = classrooms.find(c => c.classroom_name === item.classroom);
+    if (classroom) {
+      setViewMode('classroom');
+      setSelectedClassroom(String(classroom.classroom_id));
+    }
+  };
+
   const buildGrid = () => {
     const grid = {};
     DAYS.forEach(day => {
       grid[day] = {};
       timeSlots.forEach(slot => { grid[day][slot.period] = null; });
     });
-
     scheduleData.forEach(entry => {
       const day = entry.day_name;
       const period = entry.period;
-      if (grid[day] !== undefined) {
-        grid[day][period] = entry;
-      }
+      if (grid[day] !== undefined) grid[day][period] = entry;
     });
     return grid;
   };
 
-  // Benzersiz periyotları al
   const periods = [...new Set(timeSlots.map(s => s.period))].sort((a, b) => a - b);
-
-  // Periyoda göre saat bul
   const getSlotTime = (period) => {
     const slot = timeSlots.find(s => s.period === period);
     return slot ? slot.start_time?.slice(0, 5) : '';
@@ -171,10 +203,7 @@ export default function Schedules() {
         <div className="form-container">
           <div className="form-section">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-              
-              {/* Sol: Görünüm modu + seçici */}
               <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                {/* Mod seçici */}
                 <div>
                   <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '6px' }}>Görünüm</label>
                   <div style={{ display: 'flex', borderRadius: '8px', overflow: 'hidden', border: '1px solid #ddd' }}>
@@ -189,7 +218,6 @@ export default function Schedules() {
                   </div>
                 </div>
 
-                {/* Dropdown */}
                 <div>
                   <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '6px' }}>
                     {viewMode === 'classroom' ? 'Sınıf Seç' : 'Öğretmen Seç'}
@@ -210,7 +238,6 @@ export default function Schedules() {
                 </div>
               </div>
 
-              {/* Sağ: Butonlar */}
               <div style={{ display: 'flex', gap: '0.75rem' }}>
                 <button onClick={handleGenerate} disabled={generating}
                   style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', background: generating ? '#9ca3af' : 'linear-gradient(135deg, #667eea, #764ba2)', color: 'white', border: 'none', borderRadius: '8px', cursor: generating ? 'not-allowed' : 'pointer', fontWeight: '600', fontSize: '14px' }}>
@@ -246,20 +273,69 @@ export default function Schedules() {
           </div>
         </div>
 
+        {/* Yerleşmeyen Dersler Paneli */}
+        {unplaced.length > 0 && (
+          <div style={{ margin: '1.5rem 0', background: '#fff8f0', border: '1px solid #fed7aa', borderRadius: '12px', overflow: 'hidden' }}>
+            <div style={{ background: '#ea580c', color: 'white', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '700', fontSize: '14px' }}>
+              <AlertCircle size={18} />
+              Yerleşemeyen Dersler ({unplaced.length} blok)
+            </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+              <thead>
+                <tr style={{ background: '#fff3e8' }}>
+                  <th style={{ padding: '8px 12px', textAlign: 'left', color: '#7c3aed', fontWeight: '700', borderBottom: '1px solid #fed7aa' }}>Sınıf</th>
+                  <th style={{ padding: '8px 12px', textAlign: 'left', color: '#7c3aed', fontWeight: '700', borderBottom: '1px solid #fed7aa' }}>Ders</th>
+                  <th style={{ padding: '8px 12px', textAlign: 'left', color: '#7c3aed', fontWeight: '700', borderBottom: '1px solid #fed7aa' }}>Öğretmen</th>
+                  <th style={{ padding: '8px 12px', textAlign: 'center', color: '#7c3aed', fontWeight: '700', borderBottom: '1px solid #fed7aa' }}>Saat</th>
+                  <th style={{ padding: '8px 12px', textAlign: 'center', color: '#7c3aed', fontWeight: '700', borderBottom: '1px solid #fed7aa' }}>Öğretmen Saati</th>
+                  <th style={{ padding: '8px 12px', textAlign: 'center', borderBottom: '1px solid #fed7aa' }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {unplaced.map((item, i) => (
+                  <tr key={i} style={{ borderBottom: '1px solid #fed7aa', background: i % 2 === 0 ? 'white' : '#fff8f0' }}>
+                    <td style={{ padding: '8px 12px', fontWeight: '700', color: '#1f2937' }}>{item.classroom}</td>
+                    <td style={{ padding: '8px 12px', color: '#374151' }}>{item.subject}</td>
+                    <td style={{ padding: '8px 12px', color: '#374151' }}>{item.teacher}</td>
+                    <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                      <span style={{ background: '#fee2e2', color: '#dc2626', borderRadius: '4px', padding: '2px 8px', fontWeight: '700', fontSize: '12px' }}>
+                        {item.weeklyHours} saat
+                      </span>
+                    </td>
+                    <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                      <span style={{ background: '#f3f4f6', color: '#374151', borderRadius: '4px', padding: '2px 8px', fontWeight: '700', fontSize: '12px' }}>
+                        {item.teacherTotalHours} saat
+                      </span>
+                    </td>
+                    <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                      <button
+                        onClick={() => handleGoToUnplaced(item)}
+                        style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 10px', background: '#7c3aed', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '600', margin: '0 auto' }}
+                      >
+                        Git <ArrowRight size={12} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
         {/* Program Grid */}
         {loading ? (
           <div style={{ textAlign: 'center', padding: '3rem', color: '#6b7280' }}>⏳ Yükleniyor...</div>
         ) : scheduleData.length > 0 ? (
           <div className="form-container" style={{ marginTop: '2rem' }}>
-            {/* Başlık */}
             <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
-              <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '4px' }}>T.C. SEVİNÇ GÖYMEN ORTAOKULU</div>
+              <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '4px' }}>
+                {schoolName ? `T.C. ${schoolName.toUpperCase()}` : ''}
+              </div>
               <div style={{ fontSize: '1.3rem', fontWeight: '700', color: '#1f2937' }}>
                 {selectedLabel} — Haftalık Ders Programı
               </div>
             </div>
 
-            {/* Tablo */}
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                 <thead>
@@ -316,7 +392,6 @@ export default function Schedules() {
               </table>
             </div>
 
-            {/* Alt bilgi */}
             <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#6b7280', borderTop: '1px solid #e5e7eb', paddingTop: '0.75rem' }}>
               <span>Toplam Ders Saati: <strong>{scheduleData.length}</strong></span>
               <span>{new Date().toLocaleDateString('tr-TR')}</span>
