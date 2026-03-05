@@ -4,12 +4,19 @@ import {
   BookOpen,
   Plus,
   Trash2,
+  Edit,
   AlertCircle,
   CheckCircle,
+  X,
 } from "lucide-react";
 import Sidebar from "../components/Sidebar";
 import Header from "../components/Header";
 import "./Dashboard.css";
+
+const capitalize = (str) => {
+  if (!str) return "";
+  return str.toLowerCase().split(" ").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+};
 
 function Classrooms() {
   const navigate = useNavigate();
@@ -17,6 +24,9 @@ function Classrooms() {
   const [teachers, setTeachers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ type: "", text: "" });
+  const [editModal, setEditModal] = useState(false);
+  const [editData, setEditData] = useState(null);
+  const [editLoading, setEditLoading] = useState(false);
 
   const [formData, setFormData] = useState({
     classroom_name: "",
@@ -27,10 +37,7 @@ function Classrooms() {
 
   useEffect(() => {
     const token = localStorage.getItem("token");
-    if (!token) {
-      navigate("/login");
-      return;
-    }
+    if (!token) { navigate("/login"); return; }
     fetchClassrooms();
     fetchTeachers();
   }, [navigate]);
@@ -42,11 +49,8 @@ function Classrooms() {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await response.json();
-      if (data.success) {
-        setClassrooms(data.classrooms);
-      }
+      if (data.success) setClassrooms(data.classrooms);
     } catch (error) {
-      console.error("Fetch error:", error);
       setMessage({ type: "error", text: "Şubeler yüklenirken hata oluştu" });
     }
   };
@@ -58,45 +62,29 @@ function Classrooms() {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await response.json();
-      if (data.success) {
-        setTeachers(data.data);
-      }
+      if (data.success) setTeachers(data.data);
     } catch (error) {
       console.error("Teachers fetch error:", error);
     }
   };
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData({ ...formData, [name]: value });
-  };
+  const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setMessage({ type: "", text: "" });
-
     try {
       const token = localStorage.getItem("token");
       const response = await fetch("http://localhost:5000/api/classrooms", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify(formData),
       });
-
       const data = await response.json();
-
       if (data.success) {
         setMessage({ type: "success", text: "Şube başarıyla eklendi!" });
-        setFormData({
-          classroom_name: "",
-          grade_level: "",
-          guide_teacher_id: "",
-          shift: "sabah",
-        });
+        setFormData({ classroom_name: "", grade_level: "", guide_teacher_id: "", shift: "sabah" });
         fetchClassrooms();
       } else {
         setMessage({ type: "error", text: data.message });
@@ -108,20 +96,58 @@ function Classrooms() {
     }
   };
 
-  const handleDelete = async (id, name) => {
-    if (!window.confirm(`${name} şubesini silmek istediğinize emin misiniz?`)) {
-      return;
-    }
+  const handleEdit = (classroom) => {
+    setEditData({
+      classroom_id: classroom.classroom_id,
+      classroom_name: classroom.classroom_name || "",
+      grade_level: classroom.grade_level || "",
+      guide_teacher_id: classroom.guide_teacher_id || "",
+      shift: classroom.shift || "sabah",
+    });
+    setEditModal(true);
+  };
 
+  const handleEditChange = (e) => setEditData({ ...editData, [e.target.name]: e.target.value });
+
+  const handleEditSave = async () => {
+    setEditLoading(true);
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(`http://localhost:5000/api/classrooms/${editData.classroom_id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          classroom_name: editData.classroom_name,
+          grade_level: editData.grade_level,
+          guide_teacher_id: editData.guide_teacher_id || null,
+          shift: editData.shift,
+        }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        setMessage({ type: "success", text: "Şube bilgileri güncellendi!" });
+        setEditModal(false);
+        setEditData(null);
+        fetchClassrooms();
+      } else {
+        setMessage({ type: "error", text: data.message });
+      }
+    } catch (error) {
+      setMessage({ type: "error", text: "Güncelleme sırasında hata oluştu!" });
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  const handleDelete = async (id, name) => {
+    if (!window.confirm(`${name} şubesini silmek istediğinize emin misiniz?`)) return;
     try {
       const token = localStorage.getItem("token");
       const response = await fetch(`http://localhost:5000/api/classrooms/${id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
-
       const data = await response.json();
-
       if (data.success) {
         setMessage({ type: "success", text: "Şube başarıyla silindi!" });
         fetchClassrooms();
@@ -139,20 +165,20 @@ function Classrooms() {
     navigate("/login");
   };
 
+  const gradeLabel = (level) => {
+    if (level == 13) return "Hazırlık";
+    return `${level}. Sınıf`;
+  };
+
   return (
     <div className="dashboard">
       <Sidebar onLogout={handleLogout} />
-
       <main className="main-content">
         <Header />
 
         {message.text && (
           <div className={`message-box ${message.type}`}>
-            {message.type === "success" ? (
-              <CheckCircle size={20} />
-            ) : (
-              <AlertCircle size={20} />
-            )}
+            {message.type === "success" ? <CheckCircle size={20} /> : <AlertCircle size={20} />}
             <span>{message.text}</span>
           </div>
         )}
@@ -164,31 +190,22 @@ function Classrooms() {
               <div className="form-row">
                 <div className="form-group">
                   <label htmlFor="classroom_name">Şube Adı *</label>
-                  <input
-                    type="text"
-                    id="classroom_name"
-                    name="classroom_name"
-                    value={formData.classroom_name}
-                    onChange={handleChange}
-                    required
-                    placeholder="Örn: 5-A"
-                  />
+                  <input type="text" id="classroom_name" name="classroom_name" value={formData.classroom_name} onChange={handleChange} required placeholder="Örn: 5-A" />
                 </div>
 
                 <div className="form-group">
                   <label htmlFor="grade_level">Sınıf Seviyesi *</label>
-                  <select
-                    id="grade_level"
-                    name="grade_level"
-                    value={formData.grade_level}
-                    onChange={handleChange}
-                    required
-                  >
+                  <select id="grade_level" name="grade_level" value={formData.grade_level} onChange={handleChange} required>
                     <option value="">Seçiniz</option>
+                    <option value="1">1. Sınıf</option>
+                    <option value="2">2. Sınıf</option>
+                    <option value="3">3. Sınıf</option>
+                    <option value="4">4. Sınıf</option>
                     <option value="5">5. Sınıf</option>
                     <option value="6">6. Sınıf</option>
                     <option value="7">7. Sınıf</option>
                     <option value="8">8. Sınıf</option>
+                    <option value="13">Hazırlık</option>
                     <option value="9">9. Sınıf</option>
                     <option value="10">10. Sınıf</option>
                     <option value="11">11. Sınıf</option>
@@ -198,16 +215,11 @@ function Classrooms() {
 
                 <div className="form-group">
                   <label htmlFor="guide_teacher_id">Rehber Öğretmen</label>
-                  <select
-                    id="guide_teacher_id"
-                    name="guide_teacher_id"
-                    value={formData.guide_teacher_id}
-                    onChange={handleChange}
-                  >
+                  <select id="guide_teacher_id" name="guide_teacher_id" value={formData.guide_teacher_id} onChange={handleChange}>
                     <option value="">Seçiniz</option>
                     {teachers.map((teacher) => (
                       <option key={teacher.user_id} value={teacher.user_id}>
-                        {teacher.full_name} - {teacher.branch}
+                        {capitalize(teacher.full_name)} - {capitalize(teacher.branch)}
                       </option>
                     ))}
                   </select>
@@ -216,34 +228,15 @@ function Classrooms() {
                 <div className="form-group">
                   <label>Devre Grubu</label>
                   <div className="shift-toggle">
-                    <button
-                      type="button"
-                      className={`toggle-btn ${formData.shift === "sabah" ? "active" : ""}`}
-                      onClick={() => setFormData({ ...formData, shift: "sabah" })}
-                    >
-                       Sabah
-                    </button>
-                    <button
-                      type="button"
-                      className={`toggle-btn ${formData.shift === "ogle" ? "active" : ""}`}
-                      onClick={() => setFormData({ ...formData, shift: "ogle" })}
-                    >
-                       Öğle
-                    </button>
+                    <button type="button" className={`toggle-btn ${formData.shift === "sabah" ? "active" : ""}`} onClick={() => setFormData({ ...formData, shift: "sabah" })}>Sabah</button>
+                    <button type="button" className={`toggle-btn ${formData.shift === "ogle" ? "active" : ""}`} onClick={() => setFormData({ ...formData, shift: "ogle" })}>Öğle</button>
                   </div>
                 </div>
               </div>
 
               <div className="form-actions">
                 <button type="submit" className="btn-primary" disabled={loading}>
-                  {loading ? (
-                    <>Ekleniyor...</>
-                  ) : (
-                    <>
-                      <Plus size={20} />
-                      <span>Şube Ekle</span>
-                    </>
-                  )}
+                  {loading ? <>Ekleniyor...</> : <><Plus size={20} /><span>Şube Ekle</span></>}
                 </button>
               </div>
             </div>
@@ -264,32 +257,20 @@ function Classrooms() {
                 <div key={classroom.classroom_id} className="classroom-card">
                   <div className="classroom-info">
                     <h3>{classroom.classroom_name}</h3>
-                    <p className="classroom-grade">
-                      {classroom.grade_level}. Sınıf  
-                    </p>
-                    <p>  </p>
+                    <p className="classroom-grade">{gradeLabel(classroom.grade_level)}</p>
                     <p className={`classroom-shift ${classroom.shift || "sabah"}`}>
                       {classroom.shift === "ogle" ? "Öğle Grubu" : "Sabah Grubu"}
                     </p>
                     {classroom.guide_teacher_name && (
-                      <p className="classroom-teacher">
-                        Rehber: {classroom.guide_teacher_name}
-                      </p>
+                      <p className="classroom-teacher">Rehber: {capitalize(classroom.guide_teacher_name)}</p>
                     )}
                   </div>
                   <div className="classroom-actions">
-                    <button
-                      className="classroom-btn delete"
-                      onClick={() =>
-                        handleDelete(
-                          classroom.classroom_id,
-                          classroom.classroom_name
-                        )
-                      }
-                      title="Sil"
-                    >
-                      <Trash2 size={16} />
-                      Sil
+                    <button className="classroom-btn edit" onClick={() => handleEdit(classroom)} title="Düzenle">
+                      <Edit size={16} /> Düzenle
+                    </button>
+                    <button className="classroom-btn delete" onClick={() => handleDelete(classroom.classroom_id, classroom.classroom_name)} title="Sil">
+                      <Trash2 size={16} /> Sil
                     </button>
                   </div>
                 </div>
@@ -298,6 +279,67 @@ function Classrooms() {
           )}
         </div>
       </main>
+
+      {/* Düzenleme Modalı */}
+      {editModal && editData && (
+        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setEditModal(false)}>
+          <div className="modal">
+            <div className="modal-header">
+              <h3>✏️ Şube Düzenle</h3>
+              <button className="modal-close" onClick={() => setEditModal(false)}><X size={20} /></button>
+            </div>
+            <div className="modal-body">
+              <div className="form-group">
+                <label>Şube Adı *</label>
+                <input type="text" name="classroom_name" value={editData.classroom_name} onChange={handleEditChange} placeholder="Örn: 5-A" />
+              </div>
+              <div className="form-group">
+                <label>Sınıf Seviyesi *</label>
+                <select name="grade_level" value={editData.grade_level} onChange={handleEditChange}>
+                  <option value="">Seçiniz</option>
+                  <option value="1">1. Sınıf</option>
+                  <option value="2">2. Sınıf</option>
+                  <option value="3">3. Sınıf</option>
+                  <option value="4">4. Sınıf</option>
+                  <option value="5">5. Sınıf</option>
+                  <option value="6">6. Sınıf</option>
+                  <option value="7">7. Sınıf</option>
+                  <option value="8">8. Sınıf</option>
+                  <option value="13">Hazırlık</option>
+                  <option value="9">9. Sınıf</option>
+                  <option value="10">10. Sınıf</option>
+                  <option value="11">11. Sınıf</option>
+                  <option value="12">12. Sınıf</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Rehber Öğretmen</label>
+                <select name="guide_teacher_id" value={editData.guide_teacher_id} onChange={handleEditChange}>
+                  <option value="">Seçiniz</option>
+                  {teachers.map((teacher) => (
+                    <option key={teacher.user_id} value={teacher.user_id}>
+                      {capitalize(teacher.full_name)} - {capitalize(teacher.branch)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Devre Grubu</label>
+                <div className="shift-toggle">
+                  <button type="button" className={`toggle-btn ${editData.shift === "sabah" ? "active" : ""}`} onClick={() => setEditData({ ...editData, shift: "sabah" })}>Sabah</button>
+                  <button type="button" className={`toggle-btn ${editData.shift === "ogle" ? "active" : ""}`} onClick={() => setEditData({ ...editData, shift: "ogle" })}>Öğle</button>
+                </div>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn-secondary" onClick={() => setEditModal(false)}>İptal</button>
+              <button className="btn-primary" onClick={handleEditSave} disabled={editLoading}>
+                {editLoading ? "Kaydediliyor..." : "Kaydet"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
