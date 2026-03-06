@@ -102,6 +102,7 @@ function TimeSlots() {
   };
 
   const handleSave = async () => {
+  console.log('🔵 handleSave çağrıldı!'); // ← ekle
     if (selectedDays.length === 0) {
       setMessage({ type: "error", text: "En az bir gün seçmelisiniz!" });
       return;

@@ -6,15 +6,6 @@ import Header from "../components/Header";
 import "./Dashboard.css";
 
 const API_URL = "http://localhost:5000/api";
-const SCHOOL_ID = 2;
-
-const DAYS = [
-  { id: 1, name: "Pazartesi" },
-  { id: 2, name: "Salı" },
-  { id: 3, name: "Çarşamba" },
-  { id: 4, name: "Perşembe" },
-  { id: 5, name: "Cuma" },
-];
 
 function TeacherUnavailability() {
   const navigate = useNavigate();
@@ -24,9 +15,10 @@ function TeacherUnavailability() {
   const [unavailability, setUnavailability] = useState([]);
   const [saveMessage, setSaveMessage] = useState("");
 
+  const getToken = () => localStorage.getItem("token");
+
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (!token) { navigate("/login"); return; }
+    if (!getToken()) { navigate("/login"); return; }
     fetchTeachers();
     fetchTimeSlots();
   }, [navigate]);
@@ -35,8 +27,6 @@ function TeacherUnavailability() {
     if (selectedTeacher) fetchUnavailability();
     else setUnavailability([]);
   }, [selectedTeacher]);
-
-  const getToken = () => localStorage.getItem("token");
 
   const fetchTeachers = async () => {
     try {
@@ -62,7 +52,7 @@ function TeacherUnavailability() {
   const fetchUnavailability = async () => {
     try {
       const res = await fetch(
-        `${API_URL}/teacher-unavailability?teacher_id=${selectedTeacher}&school_id=${SCHOOL_ID}`,
+        `${API_URL}/teacher-unavailability?teacher_id=${selectedTeacher}`,
         { headers: { Authorization: `Bearer ${getToken()}` } }
       );
       const data = await res.json();
@@ -70,7 +60,6 @@ function TeacherUnavailability() {
     } catch (e) { console.error(e); }
   };
 
-  // Sadece time_slot_id ile karşılaştır - tabloda day_of_week kolonu yok
   const isUnavailable = (slotId) =>
     unavailability.some((item) => Number(item.time_slot_id) === Number(slotId));
 
@@ -79,7 +68,6 @@ function TeacherUnavailability() {
 
   const toggleUnavailability = async (slotId) => {
     const existing = getExisting(slotId);
-
     if (existing) {
       try {
         const res = await fetch(
@@ -87,9 +75,7 @@ function TeacherUnavailability() {
           { method: "DELETE", headers: { Authorization: `Bearer ${getToken()}` } }
         );
         if (res.ok) {
-          setUnavailability((prev) =>
-            prev.filter((item) => item.unavailability_id !== existing.unavailability_id)
-          );
+          setUnavailability((prev) => prev.filter((item) => item.unavailability_id !== existing.unavailability_id));
           showMessage("✅ Kısıtlama kaldırıldı", "success");
         }
       } catch (e) { showMessage("❌ Hata oluştu!", "error"); }
@@ -97,26 +83,18 @@ function TeacherUnavailability() {
       try {
         const res = await fetch(`${API_URL}/teacher-unavailability`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${getToken()}`,
-          },
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
           body: JSON.stringify({
             teacher_id: parseInt(selectedTeacher),
-            school_id: SCHOOL_ID,
             time_slot_id: slotId,
             reason: "Müsait değil",
           }),
         });
         const data = await res.json();
         if (data.success) {
-          // API'den yeni kayıt dönüyorsa state'e ekle, dönmüyorsa yeniden çek
           const newItem = data.data || data.unavailability;
-          if (newItem) {
-            setUnavailability((prev) => [...prev, newItem]);
-          } else {
-            await fetchUnavailability();
-          }
+          if (newItem) setUnavailability((prev) => [...prev, newItem]);
+          else await fetchUnavailability();
           showMessage("✅ Kısıtlama eklendi", "success");
         } else {
           showMessage("❌ " + (data.message || "Hata oluştu!"), "error");
@@ -136,16 +114,23 @@ function TeacherUnavailability() {
     navigate("/login");
   };
 
-  const slotsByDay = DAYS.map((day) => ({
+  // Kaç farklı gün varsa onları al (dinamik — Pzt-Cum veya Cmt-Paz dahil)
+  const uniqueDays = [...new Map(
+    timeSlots
+      .filter(s => !s.is_break)
+      .map(s => [s.day_of_week, { id: s.day_of_week, name: s.day_name }])
+  ).values()].sort((a, b) => a.id - b.id);
+
+  // Her güne ait slotlar (kırılım sayısı okuldan okula farklı: 6, 8, 14...)
+  const slotsByDay = uniqueDays.map((day) => ({
     ...day,
-    slots: timeSlots.filter((s) => Number(s.day_of_week) === day.id && !s.is_break),
+    slots: timeSlots
+      .filter((s) => Number(s.day_of_week) === day.id && !s.is_break)
+      .sort((a, b) => a.slot_order - b.slot_order),
   })).filter((day) => day.slots.length > 0);
 
+  // Sütun başlıkları için ilk günün slotlarını kullan
   const headerSlots = slotsByDay[0]?.slots || [];
-
-  const missingDays = DAYS.filter(
-    (day) => !timeSlots.some((s) => Number(s.day_of_week) === day.id && !s.is_break)
-  );
 
   const selectedTeacherName = teachers.find(
     (t) => String(t.user_id) === String(selectedTeacher)
@@ -157,7 +142,6 @@ function TeacherUnavailability() {
   return (
     <div className="dashboard">
       <Sidebar onLogout={handleLogout} />
-
       <main className="main-content">
         <Header />
 
@@ -174,7 +158,6 @@ function TeacherUnavailability() {
           </div>
         )}
 
-        {/* Başlık */}
         <div style={{ marginBottom: "24px" }}>
           <h1 style={{ fontSize: "24px", fontWeight: "700", color: "#1f2937", marginBottom: "6px" }}>
             Öğretmen Kısıtlamaları
@@ -191,10 +174,7 @@ function TeacherUnavailability() {
           display: "flex", gap: "24px", alignItems: "flex-end", flexWrap: "wrap"
         }}>
           <div style={{ flex: 1, minWidth: "280px" }}>
-            <label style={{
-              display: "block", fontSize: "14px", fontWeight: "600",
-              color: "#374151", marginBottom: "10px"
-            }}>
+            <label style={{ display: "block", fontSize: "14px", fontWeight: "600", color: "#374151", marginBottom: "10px" }}>
               Öğretmen Seçin
             </label>
             <select
@@ -218,19 +198,13 @@ function TeacherUnavailability() {
 
           {selectedTeacher && (
             <div style={{ display: "flex", gap: "16px" }}>
-              <div style={{
-                background: "#d1fae5", borderRadius: "10px",
-                padding: "12px 24px", textAlign: "center"
-              }}>
+              <div style={{ background: "#d1fae5", borderRadius: "10px", padding: "12px 24px", textAlign: "center" }}>
                 <div style={{ fontSize: "24px", fontWeight: "800", color: "#065f46" }}>
                   {totalSlots - unavailableCount}
                 </div>
                 <div style={{ fontSize: "12px", color: "#059669", fontWeight: "600" }}>Müsait</div>
               </div>
-              <div style={{
-                background: "#fee2e2", borderRadius: "10px",
-                padding: "12px 24px", textAlign: "center"
-              }}>
+              <div style={{ background: "#fee2e2", borderRadius: "10px", padding: "12px 24px", textAlign: "center" }}>
                 <div style={{ fontSize: "24px", fontWeight: "800", color: "#991b1b" }}>
                   {unavailableCount}
                 </div>
@@ -239,27 +213,6 @@ function TeacherUnavailability() {
             </div>
           )}
         </div>
-
-        {/* Eksik Günler */}
-        {missingDays.length > 0 && selectedTeacher && (
-          <div style={{
-            background: "#fff3cd", border: "2px solid #ffc107",
-            borderRadius: "12px", padding: "16px 20px", marginBottom: "24px",
-            display: "flex", alignItems: "start", gap: "12px"
-          }}>
-            <AlertCircle size={22} color="#856404" />
-            <div>
-              <p style={{ color: "#856404", fontSize: "14px", fontWeight: "600", marginBottom: "4px" }}>
-                Eksik Günler: <strong>{missingDays.map((d) => d.name).join(", ")}</strong>
-              </p>
-              <p style={{ color: "#856404", fontSize: "13px" }}>
-                <Link to="/timeslots" style={{ textDecoration: "underline" }}>
-                  Zaman Dilimi Ayarları
-                </Link> sayfasından ekleyebilirsiniz.
-              </p>
-            </div>
-          </div>
-        )}
 
         {/* Ana Grid */}
         {selectedTeacher && slotsByDay.length > 0 && (
@@ -278,24 +231,18 @@ function TeacherUnavailability() {
                   {selectedTeacherName}
                 </h3>
                 <p style={{ fontSize: "13px", opacity: 0.85 }}>
-                  Müsait olmadığı saatlere tıklayın
+                  {slotsByDay.length} gün · {headerSlots.length} ders/gün · Toplam {totalSlots} dilim
                 </p>
               </div>
               <div style={{ display: "flex", gap: "20px", alignItems: "center" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <div style={{
-                    background: "white", borderRadius: "50%", width: "28px", height: "28px",
-                    display: "flex", alignItems: "center", justifyContent: "center"
-                  }}>
+                  <div style={{ background: "white", borderRadius: "50%", width: "28px", height: "28px", display: "flex", alignItems: "center", justifyContent: "center" }}>
                     <CheckCircle2 size={24} color="#10b981" />
                   </div>
                   <span style={{ fontSize: "13px", fontWeight: "600" }}>Müsait</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <div style={{
-                    background: "white", borderRadius: "50%", width: "28px", height: "28px",
-                    display: "flex", alignItems: "center", justifyContent: "center"
-                  }}>
+                  <div style={{ background: "white", borderRadius: "50%", width: "28px", height: "28px", display: "flex", alignItems: "center", justifyContent: "center" }}>
                     <XCircle size={24} color="#ef4444" />
                   </div>
                   <span style={{ fontSize: "13px", fontWeight: "600" }}>Müsait Değil</span>
@@ -319,7 +266,7 @@ function TeacherUnavailability() {
                       <th key={slot.time_slot_id} style={{
                         padding: "14px 8px", textAlign: "center",
                         fontSize: "12px", fontWeight: "600", color: "#4b5563",
-                        minWidth: "100px", background: "#f3f4f6", borderRadius: "8px"
+                        minWidth: "90px", background: "#f3f4f6", borderRadius: "8px"
                       }}>
                         <div style={{ fontWeight: "700", color: "#1f2937", marginBottom: "3px" }}>
                           {slot.period}. Ders
@@ -347,26 +294,21 @@ function TeacherUnavailability() {
                           <td key={slotId} style={{ textAlign: "center" }}>
                             <button
                               onClick={() => toggleUnavailability(slotId)}
-                              title={unavailable
-                                ? "Müsait Değil — kaldırmak için tıkla"
-                                : "Müsait — işaretlemek için tıkla"}
+                              title={unavailable ? "Müsait Değil — kaldırmak için tıkla" : "Müsait — işaretlemek için tıkla"}
                               style={{
-                                width: "68px", height: "68px",
+                                width: "60px", height: "60px",
                                 borderRadius: "12px", border: "none",
                                 cursor: "pointer", transition: "all 0.25s",
                                 backgroundColor: unavailable ? "#fee2e2" : "#d1fae5",
-                                boxShadow: unavailable
-                                  ? "0 2px 8px rgba(239,68,68,0.25)"
-                                  : "0 2px 8px rgba(16,185,129,0.25)",
-                                display: "flex", alignItems: "center",
-                                justifyContent: "center", margin: "0 auto",
+                                boxShadow: unavailable ? "0 2px 8px rgba(239,68,68,0.25)" : "0 2px 8px rgba(16,185,129,0.25)",
+                                display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto",
                               }}
                               onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.08)"; }}
                               onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
                             >
                               {unavailable
-                                ? <XCircle size={34} color="#ef4444" strokeWidth={2.5} />
-                                : <CheckCircle2 size={34} color="#10b981" strokeWidth={2.5} />
+                                ? <XCircle size={30} color="#ef4444" strokeWidth={2.5} />
+                                : <CheckCircle2 size={30} color="#10b981" strokeWidth={2.5} />
                               }
                             </button>
                           </td>
@@ -388,13 +330,9 @@ function TeacherUnavailability() {
           }}>
             <AlertCircle size={22} color="#92400e" />
             <div>
-              <p style={{ color: "#92400e", fontWeight: "600", marginBottom: "4px" }}>
-                Zaman Dilimi Bulunamadı
-              </p>
+              <p style={{ color: "#92400e", fontWeight: "600", marginBottom: "4px" }}>Zaman Dilimi Bulunamadı</p>
               <p style={{ color: "#92400e", fontSize: "14px" }}>
-                <Link to="/timeslots" style={{ textDecoration: "underline" }}>
-                  Zaman Dilimi Ayarları
-                </Link> sayfasından ekleyin.
+                <Link to="/timeslots" style={{ textDecoration: "underline" }}>Zaman Dilimi Ayarları</Link> sayfasından ekleyin.
               </p>
             </div>
           </div>
@@ -408,9 +346,7 @@ function TeacherUnavailability() {
           }}>
             <Users size={22} color="#1e40af" />
             <div>
-              <p style={{ color: "#1e40af", fontWeight: "600", marginBottom: "4px" }}>
-                Başlamak İçin
-              </p>
+              <p style={{ color: "#1e40af", fontWeight: "600", marginBottom: "4px" }}>Başlamak İçin</p>
               <p style={{ color: "#1e40af", fontSize: "14px" }}>
                 Yukarıdan bir öğretmen seçerek kısıtlamalarını yönetmeye başlayın.
               </p>

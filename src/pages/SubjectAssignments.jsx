@@ -1,41 +1,48 @@
 import { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import {
-  LogOut, Users, BookOpen, Calendar, Settings, School, Home,
-  FileText, Clock, Plus, Trash2, CheckCircle, AlertCircle
-} from 'lucide-react';
+import { Plus, Trash2, CheckCircle, AlertCircle, Edit, X, BookOpen } from 'lucide-react';
+import Sidebar from '../components/Sidebar';
+import Header from '../components/Header';
+import './Dashboard.css';
 
 const API_URL = 'http://localhost:5000/api';
 
+const capitalize = (str) => {
+  if (!str) return '';
+  return str.toLowerCase().split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+};
+
 export default function SubjectAssignments() {
   const navigate = useNavigate();
-  const [user, setUser] = useState(null);
   const [classrooms, setClassrooms] = useState([]);
   const [subjects, setSubjects] = useState([]);
   const [teachers, setTeachers] = useState([]);
-  const [formData, setFormData] = useState({ classroom_id: '', subject_id: '', teacher_id: '' });
   const [assignments, setAssignments] = useState([]);
-  const [selectedClassroom, setSelectedClassroom] = useState('');
-  const [selectedTeacher, setSelectedTeacher] = useState('');
-  const [classroomSummary, setClassroomSummary] = useState(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
 
-  const getSchoolId = () => JSON.parse(localStorage.getItem('user') || '{}').schoolId;
+  const [formClassroom, setFormClassroom] = useState('');
+  const [formSubject, setFormSubject] = useState('');
+  const [formTeacher, setFormTeacher] = useState('');
+
+  const [filterClassroom, setFilterClassroom] = useState('');
+  const [filterTeacher, setFilterTeacher] = useState('');
+
+  const [editModal, setEditModal] = useState(false);
+  const [editData, setEditData] = useState(null);
+  const [editLoading, setEditLoading] = useState(false);
+
   const getToken = () => localStorage.getItem('token');
 
   useEffect(() => {
     if (!getToken()) { navigate('/login'); return; }
-    const userData = localStorage.getItem('user');
-    if (userData) setUser(JSON.parse(userData));
-    fetchClassrooms(); fetchSubjects(); fetchTeachers(); fetchAssignments();
+    fetchAll();
   }, [navigate]);
 
-  useEffect(() => {
-    if (selectedClassroom) fetchClassroomSummary();
-    else setClassroomSummary(null);
-  }, [selectedClassroom, assignments]);
+  const fetchAll = async () => {
+    await Promise.all([fetchClassrooms(), fetchSubjects(), fetchTeachers(), fetchAssignments()]);
+  };
 
   const fetchClassrooms = async () => {
     try {
@@ -53,46 +60,43 @@ export default function SubjectAssignments() {
 
   const fetchTeachers = async () => {
     try {
-      const res = await axios.get(`${API_URL}/teachers?school_id=${getSchoolId()}`, { headers: { Authorization: `Bearer ${getToken()}` } });
+      const res = await axios.get(`${API_URL}/teachers`, { headers: { Authorization: `Bearer ${getToken()}` } });
       setTeachers(res.data.data || []);
     } catch (e) { console.error(e); }
   };
 
   const fetchAssignments = async () => {
     try {
-      const res = await axios.get(`${API_URL}/subject-assignments?school_id=${getSchoolId()}`, { headers: { Authorization: `Bearer ${getToken()}` } });
+      const res = await axios.get(`${API_URL}/subject-assignments`, { headers: { Authorization: `Bearer ${getToken()}` } });
       setAssignments(res.data.data || []);
     } catch (e) { console.error(e); }
   };
 
-  const fetchClassroomSummary = async () => {
-    try {
-      const res = await axios.get(`${API_URL}/subject-assignments/classroom/${selectedClassroom}`, { headers: { Authorization: `Bearer ${getToken()}` } });
-      setClassroomSummary(res.data.summary);
-    } catch (e) { console.error(e); }
-  };
+  const selectedClassroomObj = classrooms.find(c => c.classroom_id === parseInt(formClassroom));
+  const filteredSubjects = formClassroom && selectedClassroomObj
+    ? subjects.filter(s => s.grade_level == selectedClassroomObj.grade_level)
+    : subjects;
+  const selectedSubjectObj = subjects.find(s => s.subject_id === parseInt(formSubject));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.classroom_id || !formData.subject_id || !formData.teacher_id) {
+    if (!formClassroom || !formSubject || !formTeacher) {
       setMessage({ type: 'error', text: 'Tüm alanları doldurun!' }); return;
     }
-    const selectedSubject = subjects.find(s => s.subject_id === parseInt(formData.subject_id));
-    if (!selectedSubject) { setMessage({ type: 'error', text: 'Ders bulunamadı!' }); return; }
-    if (!selectedSubject.weekly_hours || selectedSubject.weekly_hours < 1) {
-      setMessage({ type: 'error', text: `${selectedSubject.subject_name} dersinin haftalık saati tanımlanmamış!` }); return;
+    if (!selectedSubjectObj?.weekly_hours) {
+      setMessage({ type: 'error', text: `${selectedSubjectObj?.subject_name} dersinin haftalık saati tanımlanmamış!` }); return;
     }
     setLoading(true);
     try {
       await axios.post(`${API_URL}/subject-assignments`, {
-        classroom_id: parseInt(formData.classroom_id),
-        subject_id: parseInt(formData.subject_id),
-        teacher_id: parseInt(formData.teacher_id),
-        school_id: getSchoolId(),
-        weekly_hours: parseInt(selectedSubject.weekly_hours)
+        classroom_id: parseInt(formClassroom),
+        subject_id: parseInt(formSubject),
+        teacher_id: parseInt(formTeacher),
+        weekly_hours: parseInt(selectedSubjectObj.weekly_hours)
       }, { headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' } });
-      setMessage({ type: 'success', text: `Ders ataması eklendi! (${selectedSubject.weekly_hours} saat)` });
-      setFormData({ classroom_id: '', subject_id: '', teacher_id: '' });
+      setMessage({ type: 'success', text: `Atama eklendi! (${selectedSubjectObj.weekly_hours} saat/hafta)` });
+      setFormSubject('');
+      setFormTeacher('');
       fetchAssignments();
     } catch (error) {
       setMessage({ type: 'error', text: error.response?.data?.message || 'Hata oluştu!' });
@@ -108,48 +112,64 @@ export default function SubjectAssignments() {
     } catch (e) { setMessage({ type: 'error', text: 'Silme başarısız!' }); }
   };
 
-  const handleLogout = () => { localStorage.removeItem('token'); localStorage.removeItem('user'); navigate('/login'); };
+  const handleEdit = (assignment) => {
+    setEditData({
+      assignment_id: assignment.assignment_id,
+      teacher_id: assignment.teacher_id,
+      weekly_hours: assignment.weekly_hours,
+      subject_name: assignment.subject_name,
+      classroom_name: assignment.classroom_name,
+    });
+    setEditModal(true);
+  };
 
-  // Filtre: hem sınıf hem öğretmen
+  const handleEditSave = async () => {
+    setEditLoading(true);
+    try {
+      await axios.put(`${API_URL}/subject-assignments/${editData.assignment_id}`, {
+        teacher_id: parseInt(editData.teacher_id),
+        weekly_hours: parseInt(editData.weekly_hours),
+      }, { headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' } });
+      setMessage({ type: 'success', text: 'Atama güncellendi!' });
+      setEditModal(false);
+      fetchAssignments();
+    } catch (e) {
+      setMessage({ type: 'error', text: 'Güncelleme başarısız!' });
+    } finally { setEditLoading(false); }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    navigate('/login');
+  };
+
   const displayedAssignments = assignments.filter(a => {
-    const matchClassroom = selectedClassroom ? a.classroom_id === parseInt(selectedClassroom) : true;
-    const matchTeacher = selectedTeacher ? a.teacher_id === parseInt(selectedTeacher) : true;
+    const matchClassroom = filterClassroom ? a.classroom_id === parseInt(filterClassroom) : true;
+    const matchTeacher = filterTeacher ? a.teacher_id === parseInt(filterTeacher) : true;
     return matchClassroom && matchTeacher;
   });
 
-  const selectedSubjectInfo = formData.subject_id ? subjects.find(s => s.subject_id === parseInt(formData.subject_id)) : null;
+  // maxHours: o sınıfın grade_level'ına tanımlı derslerin weekly_hours toplamı
+  const classroomStats = classrooms.map(c => {
+    const ca = assignments.filter(a => a.classroom_id === c.classroom_id);
+    const totalHours = ca.reduce((sum, a) => sum + (a.weekly_hours || 0), 0);
+    const maxHours = subjects
+      .filter(s => s.grade_level == c.grade_level)
+      .reduce((sum, s) => sum + (s.weekly_hours || 0), 0);
+    return { ...c, totalHours, assignmentCount: ca.length, maxHours: maxHours || null };
+  });
 
-  if (!user) return <div>Yükleniyor...</div>;
+  const selectStyle = {
+    width: '100%', padding: '0.65rem 1rem', borderRadius: '8px',
+    border: '1px solid #ddd', fontSize: '14px', background: 'white', cursor: 'pointer'
+  };
 
   return (
     <div className="dashboard">
-      <aside className="sidebar">
-        <div className="sidebar-header"><h2>Okuloji</h2></div>
-        <nav className="sidebar-nav">
-          <Link to="/dashboard" className="nav-item"><Home size={20} /><span>Anasayfa</span></Link>
-          <Link to="/school-info" className="nav-item"><School size={20} /><span>Kurum Bilgileri</span></Link>
-          <Link to="/timeslots" className="nav-item"><Clock size={20} /><span>Zaman Dilimi Ayarları</span></Link>
-          <Link to="/classrooms" className="nav-item"><BookOpen size={20} /><span>Şube Bilgileri</span></Link>
-          <Link to="/subjects" className="nav-item"><FileText size={20} /><span>Dersler</span></Link>
-          <Link to="/teachers" className="nav-item"><Users size={20} /><span>Öğretmenler</span></Link>
-          <Link to="/teacher-unavailability" className="nav-item"><Calendar size={20} /><span>Öğretmen Kısıtlamaları</span></Link>
-          <Link to="/subject-assignments" className="nav-item active"><FileText size={20} /><span>Ders Atamaları</span></Link>
-          <Link to="/schedules" className="nav-item"><Calendar size={20} /><span>Ders Programı</span></Link>
-          <Link to="/settings" className="nav-item"><Settings size={20} /><span>Ayarlar</span></Link>
-        </nav>
-        <div className="sidebar-footer">
-          <button onClick={handleLogout} className="logout-btn"><LogOut size={20} /><span>Çıkış Yap</span></button>
-        </div>
-      </aside>
-
+      <Sidebar onLogout={handleLogout} />
       <main className="main-content">
-        <header className="page-header">
-          <h1>📚 Ders Atamaları</h1>
-          <div className="user-info">
-            <span className="user-name">{user.fullName}</span>
-            <span className="user-role">{user.role === 'admin' ? 'Yönetici' : 'Öğretmen'}</span>
-          </div>
-        </header>
+        <Header />
 
         {message.text && (
           <div className={`message-box ${message.type}`}>
@@ -158,212 +178,231 @@ export default function SubjectAssignments() {
           </div>
         )}
 
-        {/* Form */}
+        {/* Atama Formu */}
         <div className="form-container">
-          <form onSubmit={handleSubmit} className="subject-assignment-form">
+          <form onSubmit={handleSubmit} className="subject-form">
             <div className="form-section">
               <h3>➕ Yeni Ders Ataması</h3>
-              <div className="form-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
+              <div className="form-row">
                 <div className="form-group">
                   <label>Sınıf *</label>
-                  <select value={formData.classroom_id} onChange={(e) => setFormData({ ...formData, classroom_id: e.target.value })} required>
+                  <select value={formClassroom} onChange={(e) => { setFormClassroom(e.target.value); setFormSubject(''); setFormTeacher(''); }} required>
                     <option value="">Sınıf seçiniz</option>
                     {classrooms.map(c => <option key={c.classroom_id} value={c.classroom_id}>{c.classroom_name}</option>)}
                   </select>
                 </div>
                 <div className="form-group">
-                  <label>Ders *</label>
-                  <select value={formData.subject_id} onChange={(e) => setFormData({ ...formData, subject_id: e.target.value })} required>
+                  <label>
+                    Ders * {formClassroom && selectedClassroomObj &&
+                      <span style={{ fontSize: '12px', color: '#667eea', fontWeight: '600' }}>
+                        ({selectedClassroomObj.grade_level}. sınıf dersleri)
+                      </span>}
+                  </label>
+                  <select value={formSubject} onChange={(e) => { setFormSubject(e.target.value); setFormTeacher(''); }} required disabled={!formClassroom}>
                     <option value="">Ders seçiniz</option>
-                    {subjects.map(s => (
+                    {filteredSubjects.map(s => (
                       <option key={s.subject_id} value={s.subject_id}>
-                        {s.subject_name} {s.weekly_hours ? `(${s.weekly_hours} saat)` : '(⚠️ Saat yok!)'}
+                        {s.subject_name} ({s.weekly_hours || '⚠️'} saat)
+                      </option>
+                    ))}
+                  </select>
+                  {formClassroom && filteredSubjects.length === 0 && (
+                    <p style={{ fontSize: '12px', color: '#ef4444', marginTop: '4px' }}>Bu sınıf seviyesine ait ders tanımlanmamış!</p>
+                  )}
+                </div>
+                <div className="form-group">
+                  <label>Öğretmen *</label>
+                  <select value={formTeacher} onChange={(e) => setFormTeacher(e.target.value)} required disabled={!formSubject}>
+                    <option value="">Öğretmen seçiniz</option>
+                    {teachers.map(t => (
+                      <option key={t.user_id} value={t.user_id}>
+                        {capitalize(t.full_name)} {t.branch ? `(${capitalize(t.branch)})` : ''}
                       </option>
                     ))}
                   </select>
                 </div>
-                <div className="form-group">
-                  <label>Öğretmen *</label>
-                  <select value={formData.teacher_id} onChange={(e) => setFormData({ ...formData, teacher_id: e.target.value })} required>
-                    <option value="">Öğretmen seçiniz</option>
-                    {teachers.map(t => <option key={t.user_id} value={t.user_id}>{t.full_name} {t.branch && `(${t.branch})`}</option>)}
-                  </select>
-                </div>
               </div>
 
-              {selectedSubjectInfo && selectedSubjectInfo.weekly_hours && (
-                <div style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white', padding: '1.5rem', borderRadius: '12px', marginTop: '1rem', display: 'flex', alignItems: 'center', gap: '1rem', boxShadow: '0 4px 12px rgba(102,126,234,0.4)' }}>
-                  <CheckCircle size={32} />
-                  <div>
-                    <div style={{ fontWeight: 'bold', fontSize: '1.2rem', marginBottom: '0.25rem' }}>{selectedSubjectInfo.subject_name}</div>
-                    <div>Haftalık Ders Saati: <strong style={{ fontSize: '1.5rem' }}>{selectedSubjectInfo.weekly_hours} saat</strong> (Otomatik)</div>
-                  </div>
-                </div>
-              )}
-
-              {selectedSubjectInfo && !selectedSubjectInfo.weekly_hours && (
-                <div style={{ background: '#fee2e2', border: '2px solid #ef4444', color: '#991b1b', padding: '1rem', borderRadius: '12px', marginTop: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                  <AlertCircle size={24} />
-                  <div><strong>{selectedSubjectInfo.subject_name}</strong> dersinin haftalık saati tanımlanmamış!</div>
+              {selectedSubjectObj && (
+                <div style={{
+                  background: selectedSubjectObj.weekly_hours ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : '#fee2e2',
+                  color: selectedSubjectObj.weekly_hours ? 'white' : '#991b1b',
+                  padding: '1rem 1.5rem', borderRadius: '10px', marginTop: '1rem',
+                  display: 'flex', alignItems: 'center', gap: '1rem'
+                }}>
+                  {selectedSubjectObj.weekly_hours
+                    ? <><CheckCircle size={24} /><span><strong>{selectedSubjectObj.subject_name}</strong> — Haftalık <strong>{selectedSubjectObj.weekly_hours} saat</strong> (otomatik atanacak)</span></>
+                    : <><AlertCircle size={24} /><span><strong>{selectedSubjectObj.subject_name}</strong> — Haftalık saat tanımlanmamış!</span></>
+                  }
                 </div>
               )}
 
               <div className="form-actions" style={{ marginTop: '1.5rem' }}>
-                <button type="submit" className="btn-primary" disabled={loading || (selectedSubjectInfo && !selectedSubjectInfo.weekly_hours)}>
-                  {loading ? <>⏳ Ekleniyor...</> : <><Plus size={20} /><span>Atama Ekle</span></>}
+                <button type="submit" className="btn-primary" disabled={loading || !formClassroom || !formSubject || !formTeacher}>
+                  {loading ? 'Ekleniyor...' : <><Plus size={20} /><span>Atama Ekle</span></>}
                 </button>
               </div>
             </div>
           </form>
         </div>
 
-        {/* Filtre */}
-        <div className="form-container" style={{ marginTop: '2rem' }}>
+        {/* Filtreler */}
+        <div className="form-container" style={{ marginTop: '1.5rem' }}>
           <div className="form-section">
-            <h3>🔍 Sınıf ve Öğretmen Filtrele</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <h3>🔍 Filtrele</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '1rem', alignItems: 'flex-end', marginTop: '0.75rem' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '6px' }}>Sınıf</label>
-                <select
-                  value={selectedClassroom}
-                  onChange={(e) => setSelectedClassroom(e.target.value)}
-                  style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #ddd', fontSize: '14px' }}
-                >
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '6px' }}>Sınıfa Göre</label>
+                <select value={filterClassroom} onChange={(e) => setFilterClassroom(e.target.value)} style={selectStyle}>
                   <option value="">Tüm Sınıflar</option>
                   {classrooms.map(c => <option key={c.classroom_id} value={c.classroom_id}>{c.classroom_name}</option>)}
                 </select>
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '6px' }}>Öğretmen</label>
-                <select
-                  value={selectedTeacher}
-                  onChange={(e) => setSelectedTeacher(e.target.value)}
-                  style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #ddd', fontSize: '14px' }}
-                >
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '6px' }}>Öğretmene Göre</label>
+                <select value={filterTeacher} onChange={(e) => setFilterTeacher(e.target.value)} style={selectStyle}>
                   <option value="">Tüm Öğretmenler</option>
-                  {teachers.map(t => <option key={t.user_id} value={t.user_id}>{t.full_name}</option>)}
+                  {teachers.map(t => <option key={t.user_id} value={t.user_id}>{capitalize(t.full_name)}</option>)}
                 </select>
               </div>
+              <div>
+                {(filterClassroom || filterTeacher) && (
+                  <button
+                    onClick={() => { setFilterClassroom(''); setFilterTeacher(''); }}
+                    style={{ padding: '0.65rem 1.25rem', borderRadius: '8px', border: '1px solid #ddd', background: '#f9fafb', cursor: 'pointer', fontSize: '13px', fontWeight: '600', color: '#6b7280', whiteSpace: 'nowrap' }}
+                  >
+                    ✕ Temizle
+                  </button>
+                )}
+              </div>
             </div>
-            {(selectedClassroom || selectedTeacher) && (
-              <button
-                onClick={() => { setSelectedClassroom(''); setSelectedTeacher(''); }}
-                style={{ marginTop: '0.75rem', background: '#f3f4f6', border: 'none', borderRadius: '8px', padding: '6px 16px', cursor: 'pointer', fontSize: '13px', color: '#6b7280', fontWeight: '600' }}
-              >
-                ✕ Filtreyi Temizle
-              </button>
+          </div>
+        </div>
+
+        {/* Atama Listesi */}
+        <div className="form-container" style={{ marginTop: '1.5rem' }}>
+          <div className="form-section">
+            <h3>📋 Atamalar ({displayedAssignments.length})</h3>
+            {displayedAssignments.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '2rem', color: '#9ca3af' }}>
+                <BookOpen size={48} style={{ margin: '0 auto 1rem', display: 'block' }} />
+                <p>Henüz atama yok</p>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '0.75rem', marginTop: '1rem' }}>
+                {displayedAssignments.map((a) => (
+                  <div key={a.assignment_id} style={{
+                    background: 'white', borderRadius: '10px', padding: '1rem',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.07)', border: '1px solid #e5e7eb',
+                    borderLeft: `4px solid ${a.color || '#667eea'}`,
+                    display: 'flex', flexDirection: 'column', gap: '0.5rem'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <strong style={{ fontSize: '0.95rem', color: '#1f2937' }}>{a.subject_name}</strong>
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        <button onClick={() => handleEdit(a)} style={{ background: '#e0e7ff', border: 'none', borderRadius: '6px', padding: '4px 8px', cursor: 'pointer', color: '#4338ca' }}>
+                          <Edit size={13} />
+                        </button>
+                        <button onClick={() => handleDelete(a.assignment_id)} style={{ background: '#fee2e2', border: 'none', borderRadius: '6px', padding: '4px 8px', cursor: 'pointer', color: '#dc2626' }}>
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </div>
+                    <div style={{ fontSize: '0.85rem', color: '#6b7280' }}>👤 {capitalize(a.teacher_name)}</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ background: '#f0f4ff', color: '#667eea', padding: '0.2rem 0.6rem', borderRadius: '8px', fontSize: '0.8rem', fontWeight: '600' }}>
+                        {a.classroom_name}
+                      </span>
+                      <span style={{ background: '#d1fae5', color: '#065f46', padding: '0.2rem 0.6rem', borderRadius: '8px', fontSize: '0.85rem', fontWeight: '700' }}>
+                        {a.weekly_hours} saat
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         </div>
 
-        {/* Sınıf özeti banner - sadece sınıf filtresi seçiliyken */}
-        {classroomSummary && selectedClassroom && (
-          <div style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white', padding: '1.5rem', borderRadius: '12px', marginTop: '2rem', boxShadow: '0 4px 12px rgba(102,126,234,0.4)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <div style={{ fontSize: '0.9rem', opacity: 0.9 }}>Seçili Sınıf</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{classrooms.find(c => c.classroom_id === parseInt(selectedClassroom))?.classroom_name}</div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '0.9rem', opacity: 0.9 }}>Toplam Saat</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{classroomSummary.total_hours}/40 saat</div>
-              </div>
-            </div>
-            <div style={{ background: 'rgba(255,255,255,0.2)', height: '8px', borderRadius: '4px', marginTop: '1rem', overflow: 'hidden' }}>
-              <div style={{ background: 'white', height: '100%', width: `${Math.min((classroomSummary.total_hours / 40) * 100, 100)}%`, transition: 'width 0.3s' }} />
-            </div>
-          </div>
-        )}
-
-        {/* Atama Kartları */}
-        <div className="classrooms-table-container" style={{ marginTop: '2rem' }}>
-          <div className="table-header">
-            <h2>📋 Atamalar ({displayedAssignments.length})</h2>
-          </div>
-
-          {displayedAssignments.length > 0 ? (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '0.75rem', marginTop: '1rem' }}>
-              {displayedAssignments.map((assignment) => (
-                <div key={assignment.assignment_id} style={{
-                  background: 'white', borderRadius: '10px', padding: '1rem',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.07)', border: '1px solid #e5e7eb',
-                  borderLeft: `4px solid ${assignment.color || '#667eea'}`,
-                  display: 'flex', flexDirection: 'column', gap: '0.5rem'
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <strong style={{ fontSize: '0.95rem', color: '#1f2937', lineHeight: 1.3 }}>{assignment.subject_name}</strong>
-                    <button onClick={() => handleDelete(assignment.assignment_id)}
-                      style={{ background: '#fee2e2', border: 'none', borderRadius: '6px', padding: '4px 8px', cursor: 'pointer', color: '#dc2626', flexShrink: 0, marginLeft: '0.5rem' }}>
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                  <div style={{ fontSize: '0.85rem', color: '#6b7280' }}>👤 {assignment.teacher_name}</div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.25rem' }}>
-                    <span style={{ background: '#f0f4ff', color: '#667eea', padding: '0.2rem 0.6rem', borderRadius: '8px', fontSize: '0.8rem', fontWeight: '600' }}>
-                      {assignment.classroom_name}
-                    </span>
-                    <span style={{ background: '#d1fae5', color: '#065f46', padding: '0.2rem 0.6rem', borderRadius: '8px', fontSize: '0.85rem', fontWeight: '700' }}>
-                      {assignment.weekly_hours} saat
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div style={{ background: '#dbeafe', border: '2px solid #3b82f6', borderRadius: '12px', padding: '2rem', textAlign: 'center', marginTop: '1rem' }}>
-              <BookOpen size={48} style={{ color: '#3b82f6', margin: '0 auto 1rem' }} />
-              <h3 style={{ color: '#1e40af', marginBottom: '0.5rem' }}>Sonuç Bulunamadı</h3>
-              <p style={{ color: '#1e40af' }}>Filtre kriterlerinize uygun atama yok</p>
-            </div>
-          )}
-        </div>
-
-        {/* Sınıf Bazlı Özet Kartları */}
-        <div className="classrooms-table-container" style={{ marginTop: '2rem' }}>
-          <div className="table-header"><h2>📊 Sınıf Bazlı Özet</h2></div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1rem', marginTop: '1rem' }}>
-            {classrooms.map(classroom => {
-              const ca = assignments.filter(a => a.classroom_id === classroom.classroom_id);
-              const totalHours = ca.reduce((sum, a) => sum + a.weekly_hours, 0);
-              const uniqueSubjects = new Set(ca.map(a => a.subject_id)).size;
-              const uniqueTeachers = new Set(ca.map(a => a.teacher_id)).size;
-              const isComplete = totalHours >= 40;
-              return (
-                <div key={classroom.classroom_id}
-                  style={{ background: 'white', borderRadius: '12px', padding: '1.5rem', boxShadow: '0 2px 8px rgba(0,0,0,0.08)', border: isComplete ? '2px solid #10b981' : '2px solid #e5e7eb', cursor: 'pointer', transition: 'all 0.3s' }}
-                  onClick={() => { setSelectedClassroom(classroom.classroom_id.toString()); setSelectedTeacher(''); }}
-                  onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-4px)'; e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.12)'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.08)'; }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                    <h3 style={{ fontSize: '1.25rem', fontWeight: '700', color: '#1f2937' }}>{classroom.classroom_name}</h3>
-                    {isComplete && <CheckCircle size={24} color="#10b981" />}
-                  </div>
-                  <div style={{ background: '#f9fafb', padding: '0.75rem', borderRadius: '8px', marginBottom: '0.75rem' }}>
+        {/* Sınıf Özet Kartları */}
+        <div className="form-container" style={{ marginTop: '1.5rem' }}>
+          <div className="form-section">
+            <h3>📊 Sınıf Bazlı Özet</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.75rem', marginTop: '1rem' }}>
+              {classroomStats.map(c => {
+                const maxHours = c.maxHours;
+                const pct = maxHours ? Math.min((c.totalHours / maxHours) * 100, 100) : 0;
+                const done = maxHours && c.totalHours >= maxHours;
+                return (
+                  <div key={c.classroom_id}
+                    onClick={() => { setFilterClassroom(c.classroom_id.toString()); setFilterTeacher(''); }}
+                    style={{
+                      background: 'white', borderRadius: '10px', padding: '1rem',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.07)',
+                      border: filterClassroom == c.classroom_id ? '2px solid #667eea' : done ? '2px solid #10b981' : '2px solid #e5e7eb',
+                      cursor: 'pointer', transition: 'transform 0.2s'
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-3px)'}
+                    onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
+                  >
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                      <span style={{ fontSize: '0.9rem', color: '#666' }}>Toplam Saat</span>
-                      <span style={{ fontWeight: '700', color: totalHours >= 40 ? '#10b981' : '#667eea' }}>{totalHours}/40</span>
+                      <strong>{c.classroom_name}</strong>
+                      {done && <CheckCircle size={18} color="#10b981" />}
+                    </div>
+                    <div style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.5rem' }}>
+                      {c.totalHours} saat · {c.assignmentCount} atama
                     </div>
                     <div style={{ background: '#e5e7eb', height: '6px', borderRadius: '3px', overflow: 'hidden' }}>
-                      <div style={{ background: totalHours >= 40 ? '#10b981' : '#667eea', height: '100%', width: `${Math.min((totalHours / 40) * 100, 100)}%`, transition: 'width 0.3s' }} />
+                      <div style={{ background: done ? '#10b981' : '#667eea', height: '100%', width: `${pct}%`, transition: 'width 0.3s' }} />
                     </div>
+                    {!maxHours && (
+                      <div style={{ fontSize: '11px', color: '#f59e0b', marginTop: '4px' }}>⚠️ Ders tanımlanmamış</div>
+                    )}
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                    <div style={{ background: '#fef3c7', padding: '0.75rem', borderRadius: '8px', textAlign: 'center' }}>
-                      <div style={{ fontSize: '1.5rem', fontWeight: '700', color: '#92400e' }}>{uniqueSubjects}</div>
-                      <div style={{ fontSize: '0.75rem', color: '#92400e' }}>Ders</div>
-                    </div>
-                    <div style={{ background: '#e0e7ff', padding: '0.75rem', borderRadius: '8px', textAlign: 'center' }}>
-                      <div style={{ fontSize: '1.5rem', fontWeight: '700', color: '#3730a3' }}>{uniqueTeachers}</div>
-                      <div style={{ fontSize: '0.75rem', color: '#3730a3' }}>Öğretmen</div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         </div>
+
       </main>
+
+      {/* Düzenleme Modalı */}
+      {editModal && editData && (
+        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setEditModal(false)}>
+          <div className="modal">
+            <div className="modal-header">
+              <h3>✏️ Atama Düzenle</h3>
+              <button className="modal-close" onClick={() => setEditModal(false)}><X size={20} /></button>
+            </div>
+            <div className="modal-body">
+              <div style={{ background: '#f3f4f6', padding: '0.75rem', borderRadius: '8px', marginBottom: '1rem', fontSize: '14px', color: '#374151' }}>
+                <strong>{editData.subject_name}</strong> — {editData.classroom_name}
+              </div>
+              <div className="form-group">
+                <label>Öğretmen</label>
+                <select value={editData.teacher_id} onChange={(e) => setEditData({ ...editData, teacher_id: e.target.value })}>
+                  {teachers.map(t => (
+                    <option key={t.user_id} value={t.user_id}>
+                      {capitalize(t.full_name)} {t.branch ? `(${capitalize(t.branch)})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Haftalık Saat</label>
+                <input type="number" value={editData.weekly_hours} onChange={(e) => setEditData({ ...editData, weekly_hours: e.target.value })} min="1" max="40" />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn-secondary" onClick={() => setEditModal(false)}>İptal</button>
+              <button className="btn-primary" onClick={handleEditSave} disabled={editLoading}>
+                {editLoading ? 'Kaydediliyor...' : 'Kaydet'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

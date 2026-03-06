@@ -13,8 +13,7 @@ router.get('/', assignmentController.getAssignments);
 // GET /api/subject-assignments/classroom/:id - Sınıf bazlı atamalar
 router.get('/classroom/:classroom_id', assignmentController.getAssignmentsByClassroom);
 
-// GET /api/subject-assignments/summary - Özet istatistik
-router.get('/summary', assignmentController.getAssignmentSummary);
+
 
 // POST /api/subject-assignments - Yeni atama ekle
 router.post('/', assignmentController.createAssignment);
